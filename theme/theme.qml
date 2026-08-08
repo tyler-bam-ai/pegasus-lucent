@@ -9,7 +9,7 @@ FocusScope {
     width: 1920
     height: 1080
 
-    readonly property string lucentVersion: "3.2.0"
+    readonly property string lucentVersion: "3.2.15"
 
     property string page: "home"
     // 0 systems; 1 continue; 2 most played; 3 recently added;
@@ -26,6 +26,23 @@ FocusScope {
     property bool dualScreenDevice: true
     property string previewPlacementMode: "auto" // auto, bottom, top, off
     property bool previewSoundEnabled: true
+    // Single-screen devices can exchange the PIP and box-art columns. The
+    // preference may persist across hardware, but is never applied or exposed
+    // while a physical lower display is available.
+    property bool singleScreenMediaSwapped: false
+    // Cover View is a vertical sequence of Systems plus the seven library
+    // shelves. One large row is the calm default; users can expose two or
+    // three at once and can reorder the sequence without changing what each
+    // shelf means.
+    property int coverViewRowCount: 1
+    property var coverRowOrder: [0, 1, 2, 3, 4, 5, 6, 7]
+    property bool coverOrderEditorOpen: false
+    property int coverOrderEditorIndex: 0
+    readonly property real coverContentTop: 330
+    readonly property real coverContentHeight: 710
+    readonly property real coverRowSlotHeight: coverContentHeight / coverViewRowCount
+    readonly property real coverShelfCardWidth: coverViewRowCount === 1 ? 330 :
+                                                  (coverViewRowCount === 2 ? 238 : 196)
     // System identity is intentionally static while selected. Every system
     // owns one decoded wallpaper and receives its next random wallpaper only
     // after the user leaves it. The experimental motion layer was removed
@@ -35,6 +52,8 @@ FocusScope {
     property string currentSystemMotionSource: ""
     property bool settingsOpen: false
     property int settingsIndex: 0
+    property bool rightStickViewSwitchingEnabled: true
+    property bool viewTransitionsEnabled: false
     property bool liquidGlassEnabled: false
     // Platform family means the hardware brand (Nintendo, PlayStation, Sega,
     // Xbox/Microsoft, Atari, and so on).  It is more precise than the generic
@@ -54,6 +73,13 @@ FocusScope {
     // Read only by the hidden pre-3.0.40 settings markup retained below.
     property bool systemLedUseDeviceBrightness: false
     property string startViewPreference: "cover"
+    readonly property int baseSettingsOptionCount: dualScreenDevice ? 15 : 16
+    // Lucent's unified build has one in-window engine policy. Standalone
+    // emulator selection would break the one-app/one-window contract, so the
+    // legacy per-system external controls are not part of the visible settings.
+    readonly property int settingsOptionCount: baseSettingsOptionCount
+    readonly property int settingsPageSize: 6
+    readonly property int settingsPage: Math.floor(settingsIndex / settingsPageSize)
     property bool searchOpen: false
     property string searchQuery: ""
     property bool searchKeyboardAccepting: false
@@ -64,6 +90,11 @@ FocusScope {
     property string gameActionMessage: ""
     property var renamedGameTitles: ({})
     property var hiddenGameIds: ({})
+    // These are deliberately category-specific. Removing a behavioral item
+    // from Continue, Most Played, or Recently Added must never hide that game
+    // from the complete critic/user/A-Z/release library views.
+    property var removedHomeCategoryGameIds: ({ "1": {}, "2": {}, "3": {} })
+    property int gameActionCategory: 0
     property int libraryMutationRevision: 0
     property int singleCurrentSlot: -1
     property int singleTargetSlot: -1
@@ -116,6 +147,7 @@ FocusScope {
     property int importIdentified: 0
     property int importAdded: 0
     property bool importNeedsReload: false
+    property bool importReloadRequested: false
     property bool importToastVisible: false
     property string lastImportFingerprint: ""
     property var hardwarePhotoBySystem: []
@@ -123,6 +155,11 @@ FocusScope {
     property int upperArtworkSlot: 0
     property int upperArtworkPendingSlot: -1
     property string upperArtworkTarget: ""
+    property int boxArtworkSlot: 0
+    property int boxArtworkPendingSlot: -1
+    property string boxArtworkTarget: ""
+    property string boxArtworkSourceA: ""
+    property string boxArtworkSourceB: ""
     // Capture the system that owns the open game page. Some Android controller
     // key-up events can arrive while the home ListView is losing focus; using
     // its live currentIndex after that transition can open/display a stale
@@ -137,7 +174,15 @@ FocusScope {
     }
     property int shelfDisplaySystemIndex: page === "home" && homeZone > 0 ?
             activeGameSystemIndex : -1
+    readonly property bool homeListUsesAllSystemsAccent: page === "home" &&
+            homeViewMode === "list" && systemRail.currentIndex === 0 &&
+            homeListFocusColumn === 0
     property int displaySystemIndex: {
+        // The aggregate List View owns a neutral visual identity. Its preview
+        // game must never leak Nintendo/Sega/Sony/etc. color into the header,
+        // category strip, lighting, or selected list row.
+        if (homeListUsesAllSystemsAccent)
+            return 0
         if (page === "games" && allSystemsActive && activeGameSystemIndex > 0)
             return activeGameSystemIndex
         if (page === "games")
@@ -195,6 +240,9 @@ FocusScope {
 
     readonly property bool homeListBrowsingSystems: page === "home" &&
             homeViewMode === "list" && homeListFocusColumn === 0
+    readonly property bool showSystemBackdrop: page === "home" &&
+            ((homeViewMode === "covers" && homeZone === 0) ||
+             homeListBrowsingSystems)
     readonly property string currentViewName: page === "games" ? "SYSTEM VIEW" :
             (homeViewMode === "list" ? "LIST VIEW" : "COVER VIEW")
 
@@ -326,6 +374,32 @@ FocusScope {
         return defaults[String(family)] || "#dce4f2"
     }
 
+    function hueChannel(p, q, t) {
+        var wrapped = t
+        if (wrapped < 0) wrapped += 1
+        if (wrapped > 1) wrapped -= 1
+        if (wrapped < 1 / 6) return p + (q - p) * 6 * wrapped
+        if (wrapped < 1 / 2) return q
+        if (wrapped < 2 / 3) return p + (q - p) * (2 / 3 - wrapped) * 6
+        return p
+    }
+
+    function hslHex(hue, saturation, lightness) {
+        var red = lightness
+        var green = lightness
+        var blue = lightness
+        if (saturation > 0) {
+            var q = lightness < 0.5 ?
+                    lightness * (1 + saturation) :
+                    lightness + saturation - lightness * saturation
+            var p = 2 * lightness - q
+            red = hueChannel(p, q, hue + 1 / 3)
+            green = hueChannel(p, q, hue)
+            blue = hueChannel(p, q, hue - 1 / 3)
+        }
+        return "#" + colorByteHex(red) + colorByteHex(green) + colorByteHex(blue)
+    }
+
     function defaultSystemAccent(index) {
         if (index <= 0 || systemModel.count <= 1) return "#dce4f2"
         // Evenly spaced HSL hues make seven installed systems resolve to a
@@ -333,7 +407,10 @@ FocusScope {
         // wheel instead of clustering near one color family.
         var count = Math.max(1, systemModel.count - 1)
         var hue = ((index - 1) % count) / count
-        return Qt.hsla(hue, 0.82, 0.59, 1.0)
+        // ListModel infers this role as a string from systemCatalog. Returning
+        // the same type is essential: assigning a QColor here can silently
+        // leave the original family color in place on Qt 5.
+        return hslHex(hue, 0.82, 0.59)
     }
 
     function resolvedAccentForSystem(index) {
@@ -691,7 +768,8 @@ FocusScope {
         var candidates = []
         for (var index = 0; index < api.allGames.count; ++index) {
             var game = api.allGames.get(index)
-            if (!isLucentLibraryGame(game) || !gameVisibleAfterMutation(game))
+            if (!isLucentLibraryGame(game) || !gameVisibleAfterMutation(game) ||
+                    !gameVisibleInHomeCategory(game, 3))
                 continue
             var values = game.extra ? game.extra["added-at"] : null
             var timestamp = Number(values || 0)
@@ -805,11 +883,17 @@ FocusScope {
         homeListEntries = cached.slice(0)
         homeZone = homeListCategory
         // While the user is moving through systems, no game row is selected.
-        // A random item from the active category drives only the wallpaper and
-        // preview. Pressing A locks the system and deliberately selects row 0.
+        // A random item from the active category drives only the video preview;
+        // the upper display stays on the selected console's hardware artwork.
+        // Pressing A locks the system and deliberately selects row 0.
         homeListRail.currentIndex = homeListEntries.length > 0 ?
                 (homeListFocusColumn === 0 ?
                  Math.floor(Math.random() * homeListEntries.length) : 0) : -1
+        // Row zero is the deterministic A-button destination. Warm its cover
+        // even while a random video is playing so entering the game column can
+        // never expose that random video's old cover for a frame.
+        boxArtworkPreloadEntry.source = boxArtwork(homeListGameAt(0))
+        upperArtworkPreloadEntry.source = artwork(homeListGameAt(0))
         Qt.callLater(function() {
             if (root.homeViewMode !== "list" || root.page !== "home") return
             if (homeListRail.currentIndex >= 0)
@@ -875,6 +959,41 @@ FocusScope {
         return -1
     }
 
+    function packageDimensionsForSystem(index) {
+        // Front-face dimensions in millimetres. Cover View uses one shared
+        // pixels-per-millimetre scale, so unlike boxes retain the proportions
+        // they would have on a physical shelf. Closely related retail formats
+        // deliberately share a standard (CD jewel, DVD keep, Blu-ray, etc.).
+        var folder = index > 0 && index < systemModel.count ?
+                String(systemModel.get(index).folder) : ""
+        var dimensions = {
+            "nes": [127, 178], "snes": [180, 130], "n64": [180, 130],
+            "gb": [125, 125], "gbc": [125, 125], "gba": [125, 125],
+            "nds": [122, 135], "n3ds": [125, 135],
+            "megadrive": [130, 180], "gamegear": [125, 180],
+            "saturn": [142, 125], "dreamcast": [142, 125],
+            "psx": [142, 125], "ps2": [135, 190], "ps3": [135, 172],
+            "ps4": [135, 172], "ps5": [135, 172],
+            "psp": [105, 177], "psvita": [105, 135],
+            "gc": [135, 190], "wii": [135, 190], "wiiu": [135, 190],
+            "switch": [105, 170], "windows": [135, 190],
+            "xbox": [135, 190], "xbox360": [135, 190],
+            "arcade": [135, 190]
+        }
+        var selected = dimensions[folder] || [135, 190]
+        return { "width": selected[0], "height": selected[1] }
+    }
+
+    function packageDimensionsForGame(game) {
+        return packageDimensionsForSystem(systemIndexForGame(game))
+    }
+
+    function coverShelfPixelsPerMillimetre() {
+        if (coverViewRowCount === 1) return 2.45
+        if (coverViewRowCount === 2) return 1.05
+        return 0.56
+    }
+
     function isLucentLibraryGame(game) {
         // Pegasus exposes installed Android applications through api.allGames.
         // Lucent is a ROM library: the built-in Android provider is never a
@@ -912,6 +1031,11 @@ FocusScope {
         return index >= 0 ? systemModel.get(index).accent : root.accent
     }
 
+    function homeListAccentForGame(game) {
+        return homeListUsesAllSystemsAccent ? systemModel.get(0).accent :
+                                              accentForGame(game)
+    }
+
     function artwork(game) {
         if (!game) return ""
         // Never promote a capture or portrait cover into the wallpaper layer.
@@ -929,7 +1053,7 @@ FocusScope {
     }
 
     function upperArtworkSource() {
-        if (page === "home" && homeZone === 0)
+        if (showSystemBackdrop)
             return ""
         if (!activeGame) return ""
         // Only provider-labeled/vision-audited background art belongs here.
@@ -987,6 +1111,58 @@ FocusScope {
         incomingLayer.source = requested
         if (incomingLayer.status === Image.Ready)
             promoteUpperArtwork(incomingSlot)
+    }
+
+    function boxArtwork(game) {
+        return game && game.assets ? String(game.assets.boxFront || "") : ""
+    }
+
+    function boxArtworkLayer(slot) {
+        return slot === 0 ? homeListBoxArtA : homeListBoxArtB
+    }
+
+    function setBoxArtworkSource(slot, source) {
+        if (slot === 0) boxArtworkSourceA = source
+        else boxArtworkSourceB = source
+    }
+
+    function promoteBoxArtwork(slot) {
+        if (slot !== boxArtworkPendingSlot)
+            return
+        var layer = boxArtworkLayer(slot)
+        if (!layer || layer.status !== Image.Ready ||
+                String(layer.source) !== String(boxArtworkTarget))
+            return
+        boxArtworkSlot = slot
+        boxArtworkPendingSlot = -1
+    }
+
+    function queueBoxArtwork(game, previousGame, nextGame) {
+        // Decode both directions before input reaches them. The visible cover
+        // remains intact until the requested standby buffer is fully ready.
+        boxArtworkPreloadPrevious.source = boxArtwork(previousGame)
+        boxArtworkPreloadNext.source = boxArtwork(nextGame)
+
+        var requested = boxArtwork(game)
+        if (!requested) {
+            boxArtworkTarget = ""
+            boxArtworkPendingSlot = -1
+            boxArtworkSlot = -1
+            return
+        }
+        var activeSource = boxArtworkSlot === 0 ? boxArtworkSourceA : boxArtworkSourceB
+        if (String(activeSource) === requested) {
+            boxArtworkTarget = requested
+            boxArtworkPendingSlot = -1
+            return
+        }
+        var incomingSlot = boxArtworkSlot === 0 ? 1 : 0
+        boxArtworkTarget = requested
+        boxArtworkPendingSlot = incomingSlot
+        setBoxArtworkSource(incomingSlot, requested)
+        var incomingLayer = boxArtworkLayer(incomingSlot)
+        if (incomingLayer && incomingLayer.status === Image.Ready)
+            promoteBoxArtwork(incomingSlot)
     }
 
     function numericExtra(game, key) {
@@ -1089,10 +1265,18 @@ FocusScope {
         scheduleNavigationPersistence()
         Qt.callLater(function() {
             if (gameViewMode === "list")
-                gameListRail.positionViewAtIndex(gameRail.currentIndex, ListView.Center)
+                positionGameListAtIndex(gameRail.currentIndex)
             else
                 gameRail.positionViewAtIndex(gameRail.currentIndex, ListView.Center)
         })
+    }
+
+    function positionGameListAtIndex(index) {
+        var visibleRows = 8
+        var leadingRows = 3
+        var maximumStart = Math.max(0, activeGameCount - visibleRows)
+        var start = Math.max(0, Math.min(maximumStart, index - leadingRows))
+        gameListRail.positionViewAtIndex(start, ListView.Beginning)
     }
 
     function sortLabel(mode) {
@@ -1111,6 +1295,19 @@ FocusScope {
         return String(game.extra["lucent-id"] || game.extra.lucentId || "")
     }
 
+    // Older, hand-authored Pegasus metafiles predate Lucent's x-lucent-id.
+    // They are still first-class library games, so behavioral preferences
+    // need a durable local key. Destructive companion APIs continue to use
+    // only the importer-issued identity above.
+    function behavioralGameIdentifier(game) {
+        var identity = gameIdentifier(game)
+        if (identity !== "") return identity
+        if (!game) return ""
+        var title = String(game.title || "").trim().toLowerCase()
+        if (title === "") return ""
+        return "legacy:" + systemIndexForGame(game) + ":" + title
+    }
+
     function displayTitle(game) {
         if (!game) return ""
         var identity = gameIdentifier(game)
@@ -1124,10 +1321,34 @@ FocusScope {
         return identity === "" || !hiddenGameIds[identity]
     }
 
+    function gameVisibleInHomeCategory(game, category) {
+        var revisionDependency = libraryMutationRevision
+        if (category < 1 || category > 3) return true
+        var identity = behavioralGameIdentifier(game)
+        if (identity === "") return true
+        var bucket = removedHomeCategoryGameIds[String(category)] || ({})
+        return !bucket[identity]
+    }
+
+    function gameActionAllowsRemoveFromList() {
+        return gameActionCategory >= 1 && gameActionCategory <= 3
+    }
+
+    function gameActionOptionCount() {
+        return gameActionAllowsRemoveFromList() ? 3 : 2
+    }
+
+    function moveGameActionSelection(direction) {
+        var count = gameActionOptionCount()
+        gameActionIndex = (gameActionIndex + direction + count) % count
+    }
+
     function openGameActions(game, index) {
         if (!game) return
         gameRail.currentIndex = index
         gameActionGame = game
+        gameActionCategory = page === "home" ?
+                    (homeViewMode === "list" ? homeListCategory : homeZone) : 0
         gameActionIndex = 0
         gameActionMode = "menu"
         gameActionMessage = ""
@@ -1141,6 +1362,7 @@ FocusScope {
         renameField.focus = false
         gameActionOpen = false
         gameActionGame = null
+        gameActionCategory = 0
         gameActionMode = "menu"
         root.forceActiveFocus()
     }
@@ -1196,7 +1418,7 @@ FocusScope {
             return
         }
         gameActionMode = "working"
-        gameActionMessage = "MOVING TO LUCENT TRASH…"
+        gameActionMessage = "DELETING ROM FILE…"
         var request = new XMLHttpRequest()
         request.onreadystatechange = function() {
             if (request.readyState !== XMLHttpRequest.DONE) return
@@ -1205,7 +1427,7 @@ FocusScope {
                 root.libraryMutationRevision += 1
                 root.libraryIndexReady = false
                 root.loadLibraryIndex()
-                root.gameActionMessage = "MOVED TO LUCENT TRASH"
+                root.gameActionMessage = "ROM FILE DELETED"
                 root.gameActionMode = "success"
                 gameRail.currentIndex = Math.max(0, Math.min(gameRail.currentIndex,
                                                              activeGameCount - 1))
@@ -1217,6 +1439,35 @@ FocusScope {
         request.open("GET", "http://127.0.0.1:43821/game/delete?id=" +
                      encodeURIComponent(identity), true)
         request.send()
+    }
+
+    function submitRemoveFromList() {
+        if (!gameActionAllowsRemoveFromList()) {
+            gameActionMessage = "REMOVE FROM LIST IS ONLY AVAILABLE FOR CONTINUE, MOST PLAYED, AND RECENTLY ADDED."
+            gameActionMode = "error"
+            return
+        }
+        var identity = behavioralGameIdentifier(gameActionGame)
+        if (identity === "") {
+            gameActionMessage = "THIS GAME COULD NOT BE IDENTIFIED"
+            gameActionMode = "error"
+            return
+        }
+        var allBuckets = removedHomeCategoryGameIds
+        var categoryKey = String(gameActionCategory)
+        var bucket = allBuckets[categoryKey] || ({})
+        bucket[identity] = true
+        allBuckets[categoryKey] = bucket
+        removedHomeCategoryGameIds = allBuckets
+        api.memory.set("lucentRemovedHomeCategoryGameIds", JSON.stringify(allBuckets))
+        libraryMutationRevision += 1
+        homeListCache = ({})
+        if (gameActionCategory === 3)
+            rebuildRecentlyAddedModel()
+        if (page === "home" && homeViewMode === "list")
+            rebuildHomeList()
+        gameActionMessage = "REMOVED FROM " + homeShelfName(gameActionCategory)
+        gameActionMode = "success"
     }
 
     function boxAspectForSystem(index) {
@@ -1378,6 +1629,95 @@ FocusScope {
         api.memory.set("thoriumPreviewSound", previewSoundEnabled)
         requestPreviewEndpoint("settings/sound?enabled=" +
                 (previewSoundEnabled ? "1" : "0"))
+    }
+
+    function setSingleScreenMediaSwapped(swapped) {
+        if (dualScreenDevice) return
+        singleScreenMediaSwapped = Boolean(swapped)
+        api.memory.set("lucentSingleScreenMediaSwapped", singleScreenMediaSwapped)
+    }
+
+    function validatedCoverRowOrder(value) {
+        var candidate = value
+        if (typeof value === "string") {
+            try { candidate = JSON.parse(value) } catch (error) { candidate = [] }
+        }
+        if (!candidate || candidate.length === undefined) candidate = []
+        var output = []
+        for (var index = 0; index < candidate.length; ++index) {
+            var zone = Number(candidate[index])
+            if (zone >= 0 && zone <= 7 && output.indexOf(zone) < 0)
+                output.push(zone)
+        }
+        for (var missing = 0; missing <= 7; ++missing) {
+            if (output.indexOf(missing) < 0) output.push(missing)
+        }
+        return output
+    }
+
+    function setCoverViewRowCount(value) {
+        coverViewRowCount = Math.max(1, Math.min(3, Math.round(Number(value))))
+        api.memory.set("lucentCoverViewRowCount", coverViewRowCount)
+    }
+
+    function coverZonePosition(zone) {
+        var position = coverRowOrder.indexOf(Number(zone))
+        return position < 0 ? Number(zone) : position
+    }
+
+    function coverWindowStart() {
+        var rows = Math.max(1, Math.min(3, coverViewRowCount))
+        var position = coverZonePosition(homeZone)
+        var centered = position - Math.floor((rows - 1) / 2)
+        return Math.max(0, Math.min(8 - rows, centered))
+    }
+
+    function coverZoneVisible(zone) {
+        if (page !== "home" || homeViewMode !== "covers") return false
+        var position = coverZonePosition(zone)
+        var start = coverWindowStart()
+        return position >= start && position < start + coverViewRowCount
+    }
+
+    function stepCoverZone(direction) {
+        var position = coverZonePosition(homeZone)
+        var next = Math.max(0, Math.min(coverRowOrder.length - 1,
+                                       position + (direction < 0 ? -1 : 1)))
+        focusHomeZone(Number(coverRowOrder[next]))
+    }
+
+    function coverRowName(zone) {
+        if (zone === 0) return "SYSTEMS"
+        return homeShelfName(zone)
+    }
+
+    function coverVerticalNavigationText() {
+        var position = coverZonePosition(homeZone)
+        var directions = []
+        if (position > 0)
+            directions.push("UP  ↑  " + coverRowName(Number(coverRowOrder[position - 1])))
+        if (position < coverRowOrder.length - 1)
+            directions.push("DOWN  ↓  " + coverRowName(Number(coverRowOrder[position + 1])))
+        return directions.join("      •      ")
+    }
+
+    function openCoverOrderEditor() {
+        coverOrderEditorIndex = Math.max(0, coverZonePosition(homeZone))
+        coverOrderEditorOpen = true
+        settingsOpen = false
+    }
+
+    function moveCoverOrderItem(direction) {
+        var target = Math.max(0, Math.min(coverRowOrder.length - 1,
+                                         coverOrderEditorIndex + direction))
+        if (target === coverOrderEditorIndex) return
+        var updated = coverRowOrder.slice(0)
+        var held = updated[coverOrderEditorIndex]
+        updated[coverOrderEditorIndex] = updated[target]
+        updated[target] = held
+        coverRowOrder = updated
+        coverOrderEditorIndex = target
+        api.memory.set("lucentCoverRowOrder", JSON.stringify(coverRowOrder))
     }
 
     function previewPlacementLabel() {
@@ -1542,12 +1882,97 @@ FocusScope {
                 "  •  A  PLAY  •  B  BACK TO SYSTEM LIST"
     }
 
+    function useWhiteBrandLogo(index) {
+        if (brandSlugForSystem(index) !== "nintendo") return false
+        var color = root.accent
+        // Nintendo's official red wordmark loses contrast against a red user
+        // accent. Preserve the identity mark by rendering that PNG in white.
+        return color.r > 0.62 && color.g < 0.42 && color.b < 0.42
+    }
+
+    function setRightStickViewSwitching(enabled) {
+        rightStickViewSwitchingEnabled = Boolean(enabled)
+        api.memory.set("lucentRightStickViewSwitching",
+                       rightStickViewSwitchingEnabled)
+    }
+
+    function setViewTransitions(enabled) {
+        viewTransitionsEnabled = Boolean(enabled)
+        api.memory.set("lucentViewTransitions", viewTransitionsEnabled)
+    }
+
+    function showCoverView() {
+        page = "home"
+        homeViewMode = "covers"
+        homeZone = 0
+        homeListFocusColumn = 0
+        api.memory.set("thoriumHomeView", homeViewMode)
+        scheduleNavigationPersistence()
+        chooseSystemWallpaper(systemRail.currentIndex)
+        Qt.callLater(function() { root.activateHomePreview(false) })
+        root.forceActiveFocus()
+    }
+
+    function showListView() {
+        page = "home"
+        homeViewMode = "list"
+        homeListCategory = Math.max(1, Math.min(7, homeListCategory))
+        homeZone = homeListCategory
+        homeListFocusColumn = 0
+        api.memory.set("thoriumHomeView", homeViewMode)
+        scheduleNavigationPersistence()
+        rebuildHomeList()
+        root.forceActiveFocus()
+    }
+
+    function showAllSystemsView() {
+        openSystemInPlace(0)
+        page = "games"
+        root.forceActiveFocus()
+    }
+
+    function handleRightStickViewKey(event) {
+        if (!rightStickViewSwitchingEnabled) return false
+        if (event.key === Qt.Key_F1) {
+            showCoverView()
+            return true
+        }
+        if (event.key === Qt.Key_F2) {
+            showListView()
+            return true
+        }
+        if (event.key === Qt.Key_F3 || event.key === Qt.Key_F4) {
+            if (page !== "games")
+                showAllSystemsView()
+            else
+                stepOpenSystem(event.key === Qt.Key_F3 ? -1 : 1)
+            return true
+        }
+        return false
+    }
+
+    function stepHomeListPage(direction) {
+        if (homeListFocusColumn === 0) {
+            var systemPage = 9
+            systemRail.currentIndex = Math.max(0, Math.min(systemModel.count - 1,
+                    systemRail.currentIndex + (direction < 0 ? -systemPage : systemPage)))
+            return
+        }
+        if (homeListEntries.length <= 0) return
+        var gamePage = 7
+        homeListRail.currentIndex = Math.max(0, Math.min(homeListEntries.length - 1,
+                homeListRail.currentIndex + (direction < 0 ? -gamePage : gamePage)))
+    }
+
     function settingTitle(index) {
         var titles = ["SYSTEM WALLPAPER MODE", "GAME PREVIEW PLACEMENT",
                 "PREVIEW VIDEO SOUND", "LIQUID GLASS",
                 "ACCENT COLOR GROUPING", "CUSTOMIZE ACCENT COLORS",
                 "SYSTEM-MATCHED STICK LEDS", "STICK LED BRIGHTNESS",
-                "START VIEW", "ABOUT LUCENT", "UPDATE LIBRARY & LUCENT"]
+                "START VIEW", "COVER VIEW ROWS", "COVER ROW ORDER",
+                "RIGHT STICK VIEW SWITCHING", "VIEW TRANSITIONS",
+                "ABOUT LUCENT", "UPDATE LIBRARY & LUCENT",
+                "PIP / BOX ART ORDER"]
         return titles[index]
     }
 
@@ -1562,8 +1987,13 @@ FocusScope {
             "Instantly matches the accent of the highlighted system",
             "Manual hardware level from 1–100%; defaults to a subtle 2%",
             "Choose the layout or detected system shown on a fresh launch",
+            "Show one large shelf by default, or expose two or three at once",
+            "Reorder Systems, Continue, Most Played, Recently Added, and score shelves",
+            "Up: Cover  •  Down: List  •  Left/Right: All Systems then systems",
+            "Optional slide, fade, and scale motion when changing Lucent views",
             "Pegasus attribution, licenses, trademarks, and Lucent version",
-            "Scan games and check GitHub for app and theme updates"
+            "Scan games and check GitHub for app and theme updates",
+            "Swap the video and box-art positions on single-screen devices"
         ]
         return descriptions[index]
     }
@@ -1578,8 +2008,16 @@ FocusScope {
         if (index === 6) return systemLedEnabled ? "ON" : "OFF"
         if (index === 7) return systemLedBrightness + "%"
         if (index === 8) return startViewLabel(startViewPreference)
-        if (index === 9) return "VIEW"
-        return "RUN"
+        if (index === 9) return coverViewRowCount + (coverViewRowCount === 1 ? " ROW" : " ROWS")
+        if (index === 10) return "EDIT"
+        if (index === 11) return rightStickViewSwitchingEnabled ? "ON" : "OFF"
+        if (index === 12) return viewTransitionsEnabled ? "ON" : "OFF"
+        if (index === 13) return "VIEW"
+        if (index === 14) return "RUN"
+        if (index === 15 && !dualScreenDevice)
+            return singleScreenMediaSwapped ? "BOX LEFT  •  VIDEO RIGHT" :
+                                              "VIDEO LEFT  •  BOX RIGHT"
+        return ""
     }
 
     function activateSetting(direction) {
@@ -1605,14 +2043,25 @@ FocusScope {
         } else if (settingsIndex === 8) {
             cycleStartView(direction === 0 ? 1 : direction)
         } else if (settingsIndex === 9) {
+            var rowStep = direction < 0 ? -1 : 1
+            setCoverViewRowCount(((coverViewRowCount - 1 + rowStep + 3) % 3) + 1)
+        } else if (settingsIndex === 10) {
+            openCoverOrderEditor()
+        } else if (settingsIndex === 11) {
+            setRightStickViewSwitching(!rightStickViewSwitchingEnabled)
+        } else if (settingsIndex === 12) {
+            setViewTransitions(!viewTransitionsEnabled)
+        } else if (settingsIndex === 13) {
             aboutOpen = true
-        } else {
+        } else if (settingsIndex === 14) {
             updatePromptDismissed = false
             importState = "idle"
             importStatusInitialized = true
             importToastVisible = true
             startImportScan()
             requestPreviewEndpoint("update/check")
+        } else if (settingsIndex === 15 && !dualScreenDevice) {
+            setSingleScreenMediaSwapped(!singleScreenMediaSwapped)
         }
     }
 
@@ -1765,6 +2214,8 @@ FocusScope {
         importIdentified = Number(payload.identified || 0)
         importAdded = Number(payload.added || 0)
         importNeedsReload = Boolean(payload.needsReload)
+        if (importState !== "complete" && importState !== "idle")
+            importReloadRequested = false
         if (establishSilentBaseline) {
             importToastVisible = false
             return
@@ -1776,6 +2227,10 @@ FocusScope {
             if (previousState !== "complete") {
                 importToastVisible = true
                 importToastDismiss.restart()
+                if (importNeedsReload && !importReloadRequested) {
+                    importReloadRequested = true
+                    importedLibraryReload.restart()
+                }
             }
         } else if (importState === "error") {
             if (previousState !== "error") {
@@ -2069,6 +2524,9 @@ FocusScope {
         queueUpperArtwork(current.previewGame,
                           previous ? previous.previewGame : null,
                           next ? next.previewGame : null)
+        queueBoxArtwork(current.previewGame,
+                        previous ? previous.previewGame : null,
+                        next ? next.previewGame : null)
         var homeAux = lastHomeGameBySystem[systemIndex]
         if (!homeAux) {
             homeAux = randomHomeVideoGame(systemIndex, current.previewGame)
@@ -2092,6 +2550,7 @@ FocusScope {
                 (rail.currentIndex - 1 + model.count) % model.count)
         var next = homeShelfGameAt(zone, (rail.currentIndex + 1) % model.count)
         queueUpperArtwork(game, previous, next)
+        queueBoxArtwork(game, previous, next)
         sendBottomPreview(game, previous, next, null)
     }
 
@@ -2114,6 +2573,7 @@ FocusScope {
                                       homeListEntries.length)
         var next = homeListGameAt((selectedIndex + 1) % homeListEntries.length)
         queueUpperArtwork(game, previous, next)
+        queueBoxArtwork(game, previous, next)
         sendBottomPreview(game, previous, next, null)
     }
 
@@ -2333,10 +2793,21 @@ FocusScope {
         api.memory.set("thoriumSystemMotion", false)
         previewPlacementMode = api.memory.has("thoriumPreviewPlacement") ?
                 api.memory.get("thoriumPreviewPlacement") : "auto"
+        singleScreenMediaSwapped = api.memory.has("lucentSingleScreenMediaSwapped") ?
+                Boolean(api.memory.get("lucentSingleScreenMediaSwapped")) : false
+        coverViewRowCount = api.memory.has("lucentCoverViewRowCount") ?
+                Math.max(1, Math.min(3, Number(api.memory.get("lucentCoverViewRowCount")))) : 1
+        coverRowOrder = validatedCoverRowOrder(api.memory.has("lucentCoverRowOrder") ?
+                String(api.memory.get("lucentCoverRowOrder")) : "[0,1,2,3,4,5,6,7]")
         // The refractive shader remains available as an explicit visual
         // preference, but the calm, undistorted surface is the default.
         liquidGlassEnabled = api.memory.has("thoriumLiquidGlassEnabled") ?
                 Boolean(api.memory.get("thoriumLiquidGlassEnabled")) : false
+        rightStickViewSwitchingEnabled =
+                api.memory.has("lucentRightStickViewSwitching") ?
+                Boolean(api.memory.get("lucentRightStickViewSwitching")) : true
+        viewTransitionsEnabled = api.memory.has("lucentViewTransitions") ?
+                Boolean(api.memory.get("lucentViewTransitions")) : false
         accentGrouping = api.memory.has("lucentAccentGrouping") ?
                 String(api.memory.get("lucentAccentGrouping")) : "family"
         try {
@@ -2347,6 +2818,14 @@ FocusScope {
             customSystemAccents = api.memory.has("lucentCustomSystemAccents") ?
                     JSON.parse(String(api.memory.get("lucentCustomSystemAccents"))) : ({})
         } catch (systemError) { customSystemAccents = ({}) }
+        try {
+            removedHomeCategoryGameIds = api.memory.has("lucentRemovedHomeCategoryGameIds") ?
+                    JSON.parse(String(api.memory.get("lucentRemovedHomeCategoryGameIds"))) :
+                    ({ "1": {}, "2": {}, "3": {} })
+        } catch (removedListError) {
+            removedHomeCategoryGameIds = ({ "1": {}, "2": {}, "3": {} })
+        }
+        rebuildRecentlyAddedModel()
         applyAccentPalette()
         systemLedEnabled = api.memory.has("lucentSystemLedEnabled") ?
                 Boolean(api.memory.get("lucentSystemLedEnabled")) : true
@@ -2437,7 +2916,7 @@ FocusScope {
                 gameRail.currentIndex = Math.max(0,
                         Math.min(activeGameCount - 1, rememberedGame))
                 if (root.gameViewMode === "list")
-                    gameListRail.positionViewAtIndex(gameRail.currentIndex, ListView.Center)
+                    root.positionGameListAtIndex(gameRail.currentIndex)
                 else
                     gameRail.positionViewAtIndex(gameRail.currentIndex, ListView.Center)
                 root.activateGamePreview()
@@ -2507,11 +2986,18 @@ FocusScope {
                     closeGameActions()
                 } else if (event.key === Qt.Key_Up || event.key === Qt.Key_Down ||
                            event.key === Qt.Key_Left || event.key === Qt.Key_Right) {
-                    gameActionIndex = gameActionIndex === 0 ? 1 : 0
+                    moveGameActionSelection(
+                                event.key === Qt.Key_Up || event.key === Qt.Key_Left ? -1 : 1)
                 } else if (api.keys.isAccept(event)) {
                     if (gameActionIndex === 0) beginRenameGame()
+                    else if (gameActionAllowsRemoveFromList() && gameActionIndex === 1)
+                        gameActionMode = "confirm-remove"
                     else gameActionMode = "confirm-delete"
                 }
+                event.accepted = true
+            } else if (gameActionMode === "confirm-remove") {
+                if (api.keys.isCancel(event) || event.key === Qt.Key_Back || event.key === Qt.Key_Escape) gameActionMode = "menu"
+                else if (api.keys.isAccept(event)) submitRemoveFromList()
                 event.accepted = true
             } else if (gameActionMode === "confirm-delete") {
                 if (api.keys.isCancel(event) || event.key === Qt.Key_Back || event.key === Qt.Key_Escape) gameActionMode = "menu"
@@ -2538,6 +3024,22 @@ FocusScope {
                                   event.key === Qt.Key_Escape)) {
             endSearch()
             event.accepted = true
+        } else if (coverOrderEditorOpen) {
+            if (api.keys.isCancel(event) || event.key === Qt.Key_Back ||
+                    event.key === Qt.Key_Escape || api.keys.isDetails(event)) {
+                coverOrderEditorOpen = false
+                settingsOpen = true
+            } else if (event.key === Qt.Key_Up) {
+                coverOrderEditorIndex = Math.max(0, coverOrderEditorIndex - 1)
+            } else if (event.key === Qt.Key_Down) {
+                coverOrderEditorIndex = Math.min(coverRowOrder.length - 1,
+                                                 coverOrderEditorIndex + 1)
+            } else if (event.key === Qt.Key_Left) {
+                moveCoverOrderItem(-1)
+            } else if (event.key === Qt.Key_Right || api.keys.isAccept(event)) {
+                moveCoverOrderItem(1)
+            }
+            event.accepted = true
         } else if (settingsOpen) {
             if (api.keys.isCancel(event) || event.key === Qt.Key_Back ||
                     event.key === Qt.Key_Escape || api.keys.isDetails(event)) {
@@ -2545,7 +3047,8 @@ FocusScope {
             } else if (event.key === Qt.Key_Up) {
                 settingsIndex = Math.max(0, settingsIndex - 1)
             } else if (event.key === Qt.Key_Down) {
-                settingsIndex = Math.min(10, settingsIndex + 1)
+                settingsIndex = Math.min(settingsOptionCount - 1,
+                                         settingsIndex + 1)
             } else if (event.key === Qt.Key_Left) {
                 activateSetting(-1)
             } else if (event.key === Qt.Key_Right) {
@@ -2553,6 +3056,8 @@ FocusScope {
             } else if (api.keys.isAccept(event)) {
                 activateSetting(0)
             }
+            event.accepted = true
+        } else if (handleRightStickViewKey(event)) {
             event.accepted = true
         } else if (page === "home") {
             if (api.keys.isDetails(event)) {
@@ -2578,12 +3083,9 @@ FocusScope {
                 } else if (api.keys.isNextPage(event)) {
                     cycleHomeListCategory(1)
                 } else if (event.key === Qt.Key_Left) {
-                    cycleHomeListCategory(-1)
+                    stepHomeListPage(-1)
                 } else if (event.key === Qt.Key_Right) {
-                    if (homeListFocusColumn === 0)
-                        enterHomeListGames()
-                    else
-                        cycleHomeListCategory(1)
+                    stepHomeListPage(1)
                 } else if (event.key === Qt.Key_Up) {
                     if (homeListFocusColumn === 0)
                         stepSystem(-1)
@@ -2608,16 +3110,16 @@ FocusScope {
                     stepSystem(coverSystemDirection)
                     event.accepted = true
                 } else if (api.keys.isPrevPage(event)) {
-                    focusHomeZone(homeZone <= 1 ? 7 : homeZone - 1)
+                    stepCoverZone(-1)
                     event.accepted = true
                 } else if (api.keys.isNextPage(event)) {
-                    focusHomeZone(homeZone >= 7 || homeZone === 0 ? 1 : homeZone + 1)
+                    stepCoverZone(1)
                     event.accepted = true
                 } else if (event.key === Qt.Key_Up) {
-                focusHomeZone(homeZone - 1)
+                stepCoverZone(-1)
                 event.accepted = true
                 } else if (event.key === Qt.Key_Down) {
-                focusHomeZone(homeZone + 1)
+                stepCoverZone(1)
                 event.accepted = true
                 } else if (event.key === Qt.Key_Left) {
                 if (homeZone === 0)
@@ -2742,6 +3244,13 @@ FocusScope {
                   (root.importAdded > 0 || root.importNeedsReload ? 7000 : 4200)
         repeat: false
         onTriggered: root.importToastVisible = false
+    }
+
+    Timer {
+        id: importedLibraryReload
+        interval: 900
+        repeat: false
+        onTriggered: root.requestPreviewEndpoint("import/reload")
     }
 
     Rectangle {
@@ -3118,14 +3627,39 @@ FocusScope {
             opacity: 0
 
             Image {
-                source: systemModel.get(index).folder === "all" ? "" :
+                source: systemModel.get(index).folder === "all" ?
+                        Qt.resolvedUrl("assets/hardware-cutouts/all/0.png") :
                         Qt.resolvedUrl("assets/logos-png/" +
                                        systemModel.get(index).folder + ".png")
-                asynchronous: true
+                // These are packaged local assets and the system model is
+                // intentionally small. Decode once at startup so delegate
+                // recycling can never produce a blank logo frame.
+                asynchronous: false
                 cache: true
                 sourceSize.width: 700
                 sourceSize.height: 300
             }
+        }
+    }
+
+    // The header uses platform-family marks rather than console marks. Decode
+    // those independently as well; preloading only logos-png left a visible
+    // blank frame the first time Nintendo/Sega/Sony/Microsoft appeared.
+    Repeater {
+        model: root.availableBrandSlugs
+        Image {
+            x: -2000
+            y: -2000
+            width: 1
+            height: 1
+            opacity: 0
+            source: modelData === "arcade" ?
+                    Qt.resolvedUrl("assets/logos-png/arcade.png") :
+                    Qt.resolvedUrl("assets/brands/" + modelData + ".png")
+            asynchronous: false
+            cache: true
+            sourceSize.width: 760
+            sourceSize.height: 224
         }
     }
 
@@ -3137,7 +3671,8 @@ FocusScope {
             RangeFilter { roleName: "playCount"; minimumValue: 1 },
             ExpressionFilter {
                 expression: root.isLucentLibraryGame(api.allGames.get(index)) &&
-                            root.gameVisibleAfterMutation(api.allGames.get(index))
+                            root.gameVisibleAfterMutation(api.allGames.get(index)) &&
+                            root.gameVisibleInHomeCategory(api.allGames.get(index), 1)
             }
         ]
     }
@@ -3153,7 +3688,8 @@ FocusScope {
             RangeFilter { roleName: "playCount"; minimumValue: 1 },
             ExpressionFilter {
                 expression: root.isLucentLibraryGame(api.allGames.get(index)) &&
-                            root.gameVisibleAfterMutation(api.allGames.get(index))
+                            root.gameVisibleAfterMutation(api.allGames.get(index)) &&
+                            root.gameVisibleInHomeCategory(api.allGames.get(index), 2)
             }
         ]
     }
@@ -3301,14 +3837,26 @@ FocusScope {
             property var game: root.homeShelfGameAt(ListView.view.zone, index)
             property bool isSelected: ListView.isCurrentItem &&
                     root.homeZone === ListView.view.zone
-            property real coverAspect: shelfCover.status === Image.Ready &&
-                    shelfCover.sourceSize.height > 0 ?
-                    shelfCover.sourceSize.width / shelfCover.sourceSize.height : 0.72
-            property real coverWidth: Math.min(220, 250 * coverAspect)
-            property real coverHeight: coverWidth / coverAspect
-            width: 238
-            height: 356
-            scale: isSelected ? 1.0 : 0.94
+            property var packageSize: root.packageDimensionsForGame(game)
+            property real packageScale: root.coverShelfPixelsPerMillimetre()
+            property real coverAreaHeight: Math.max(108, height -
+                    (root.coverViewRowCount === 1 ? 128 : 98))
+            property real desiredCoverWidth: packageSize.width * packageScale
+            property real desiredCoverHeight: packageSize.height * packageScale
+            property real maximumCoverWidth: root.coverViewRowCount === 1 ? 520 :
+                    (root.coverViewRowCount === 2 ? 310 : 220)
+            property real packageFit: Math.min(1,
+                    coverAreaHeight / Math.max(1, desiredCoverHeight),
+                    maximumCoverWidth / Math.max(1, desiredCoverWidth))
+            property real coverWidth: desiredCoverWidth * packageFit
+            property real coverHeight: desiredCoverHeight * packageFit
+            width: Math.max(root.coverViewRowCount === 1 ? 180 :
+                    (root.coverViewRowCount === 2 ? 150 : 130), coverWidth + 22)
+            height: Math.max(184, root.coverRowSlotHeight - 52)
+            // Selection is communicated by the accent frame, not by changing
+            // package scale. That keeps every adjacent case in the same real-
+            // world proportion even while focus moves across the shelf.
+            scale: 1.0
             opacity: isSelected ? 1.0 : 0.84
             Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
             Behavior on opacity { NumberAnimation { duration: 150 } }
@@ -3328,7 +3876,7 @@ FocusScope {
             Image {
                 id: shelfCover
                 x: (parent.width - parent.coverWidth) / 2
-                y: 4 + (250 - parent.coverHeight) / 2
+                y: 2 + (parent.coverAreaHeight - parent.coverHeight) / 2
                 width: parent.coverWidth
                 height: parent.coverHeight
                 source: game ? (game.assets.boxFront || "") : ""
@@ -3340,17 +3888,20 @@ FocusScope {
             }
 
             Text {
+                id: shelfTitle
                 x: 8
-                y: 270
+                y: parent.coverAreaHeight + 10
                 width: parent.width - 16
-                height: 48
+                height: root.coverViewRowCount === 1 ? 48 :
+                        (root.coverViewRowCount === 2 ? 38 : 30)
                 text: root.displayTitle(game)
                 color: "#eef1f7"
                 elide: Text.ElideRight
                 wrapMode: Text.Wrap
                 maximumLineCount: 2
                 font.family: global.fonts.sans
-                font.pixelSize: 18
+                font.pixelSize: root.coverViewRowCount === 1 ? 22 :
+                                (root.coverViewRowCount === 2 ? 18 : 15)
                 font.weight: Font.Bold
                 style: Text.Outline
                 styleColor: "#d0000000"
@@ -3358,9 +3909,13 @@ FocusScope {
 
             Text {
                 x: 8
-                y: 322
+                // Follow the title instead of hugging the bottom of the card.
+                // This keeps ratings visually paired with the game name in
+                // every Cover View shelf and at every configured row count.
+                y: shelfTitle.y +
+                   Math.min(shelfTitle.height, shelfTitle.paintedHeight) + 4
                 width: parent.width - 16
-                height: 34
+                height: root.coverViewRowCount === 1 ? 34 : 28
                 text: root.scoreText(game)
                 color: root.accentForGame(game)
                 wrapMode: Text.NoWrap
@@ -3368,7 +3923,8 @@ FocusScope {
                 fontSizeMode: Text.HorizontalFit
                 minimumPixelSize: 11
                 font.family: global.fonts.sans
-                font.pixelSize: 14
+                font.pixelSize: root.coverViewRowCount === 1 ? 16 :
+                                (root.coverViewRowCount === 2 ? 14 : 11)
                 font.weight: Font.Bold
                 font.letterSpacing: 0
                 style: Text.Outline
@@ -3402,7 +3958,7 @@ FocusScope {
     // Real product photography sits above this restrained accent field.
     Rectangle {
         anchors.fill: parent
-        visible: root.page === "home" && root.homeZone === 0
+        visible: root.showSystemBackdrop
         gradient: Gradient {
             GradientStop { position: 0.0; color: "#07090d" }
             GradientStop { position: 0.58; color: "#0a0e15" }
@@ -3412,7 +3968,7 @@ FocusScope {
 
     LinearGradient {
         anchors.fill: parent
-        visible: root.page === "home" && root.homeZone === 0
+        visible: root.showSystemBackdrop
         start: Qt.point(0, height * 0.50)
         end: Qt.point(width, height * 0.50)
         gradient: Gradient {
@@ -3444,7 +4000,7 @@ FocusScope {
             y: 0
             width: 1920
             height: 1080
-            opacity: root.page === "home" && root.homeZone === 0 &&
+            opacity: root.showSystemBackdrop &&
                      systemRail.currentIndex === index ? 1.0 : 0
 
             RadialGradient {
@@ -3504,7 +4060,7 @@ FocusScope {
     // destinations decoded in advance. This also covers sort changes.
     Item {
         anchors.fill: parent
-        visible: !(root.page === "home" && root.homeZone === 0)
+        visible: !root.showSystemBackdrop
 
         Image {
             id: upperArtworkA
@@ -3558,11 +4114,24 @@ FocusScope {
             sourceSize.height: 1080
             opacity: 0
         }
+
+        Image {
+            id: upperArtworkPreloadEntry
+            x: -4
+            y: -4
+            width: 2
+            height: 2
+            asynchronous: true
+            cache: true
+            sourceSize.width: 1920
+            sourceSize.height: 1080
+            opacity: 0
+        }
     }
 
     Item {
         anchors.fill: parent
-        visible: !(root.page === "home" && root.homeZone === 0) &&
+        visible: !root.showSystemBackdrop &&
                  (!root.activeGame || !root.artwork(root.activeGame))
 
         Text {
@@ -3600,7 +4169,7 @@ FocusScope {
         y: 286
         width: parent.width
         height: parent.height - y
-        visible: root.page === "home" && root.homeZone === 0
+        visible: root.showSystemBackdrop
         gradient: Gradient {
             GradientStop { position: 0.0; color: "#1207090d" }
             GradientStop { position: 0.18; color: "#b807090d" }
@@ -3680,10 +4249,18 @@ FocusScope {
         // control, or game row. Dual-screen Thor geometry is untouched because
         // this item is disabled there.
         property bool compactHomeList: root.page === "home" && root.homeViewMode === "list"
-        x: compactHomeList ? parent.width - width - 226 : parent.width - width - 56
-        y: compactHomeList ? 112 : 102
+        property bool compactGameList: root.page === "games" && root.gameViewMode === "list"
+        property bool swapHomeList: compactHomeList && !root.dualScreenDevice &&
+                                    root.singleScreenMediaSwapped
+        property bool swapGameList: compactGameList && !root.dualScreenDevice &&
+                                    root.singleScreenMediaSwapped
+        x: swapHomeList ? parent.width - width - 56 :
+           (swapGameList ? listViewPanel.x :
+            (compactHomeList ? parent.width - width - 226 : parent.width - width - 56))
+        y: swapGameList ? listViewPanel.y - 76 + (600 - height) / 2 :
+           (compactHomeList ? 112 : 102)
         width: compactHomeList ? 330 :
-               (root.page === "games" && root.gameViewMode === "list" ? 624 : 392)
+               (compactGameList ? (swapGameList ? 600 : 624) : 392)
         height: Math.round(width * 9 / 16)
         visible: root.previewPlacementMode !== "off" &&
                  !root.useBottomPreview() && root.singleCurrentSlot >= 0
@@ -3778,6 +4355,7 @@ FocusScope {
                          root.displaySystemIndex > 0
 
                 Image {
+                    id: activeBrandLogo
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     width: parent.leftAnchoredMark ? 64 : parent.width
@@ -3785,10 +4363,18 @@ FocusScope {
                     source: root.brandLogoForSystem(root.displaySystemIndex)
                     fillMode: Image.PreserveAspectFit
                     horizontalAlignment: Image.AlignLeft
-                    asynchronous: true
+                    asynchronous: false
                     cache: true
                     sourceSize.width: 760
                     sourceSize.height: 224
+                }
+
+                ColorOverlay {
+                    anchors.fill: activeBrandLogo
+                    source: activeBrandLogo
+                    color: "white"
+                    visible: root.useWhiteBrandLogo(root.displaySystemIndex)
+                    cached: true
                 }
             }
 
@@ -3816,7 +4402,7 @@ FocusScope {
                                     Qt.resolvedUrl("assets/brands/" + modelData + ".png")
                             fillMode: Image.PreserveAspectFit
                             horizontalAlignment: Image.AlignLeft
-                            asynchronous: true
+                            asynchronous: false
                             cache: true
                             smooth: true
                             mipmap: true
@@ -4088,17 +4674,36 @@ FocusScope {
             id: homePage
             anchors.fill: parent
             opacity: root.page === "home" ? 1 : 0
+            scale: root.page === "home" ? 1 : 0.985
             visible: opacity > 0
-            Behavior on opacity { NumberAnimation { duration: 100 } }
+            Behavior on opacity {
+                NumberAnimation { duration: root.viewTransitionsEnabled ? 240 : 0;
+                                  easing.type: Easing.OutCubic }
+            }
+            Behavior on scale {
+                NumberAnimation { duration: root.viewTransitionsEnabled ? 260 : 0;
+                                  easing.type: Easing.OutCubic }
+            }
+            transform: Translate {
+                x: root.page === "home" ? 0 : -72
+                Behavior on x {
+                    NumberAnimation { duration: root.viewTransitionsEnabled ? 260 : 0;
+                                      easing.type: Easing.OutCubic }
+                }
+            }
 
             Text {
                 x: 58
                 y: 150
+                width: !root.dualScreenDevice && root.homeViewMode === "covers" ?
+                       singleScreenPip.x - x - 28 : parent.width - 116
                 visible: root.homeZone === 0
                 text: systemModel.get(systemRail.currentIndex).name
                 color: "white"
                 font.family: global.fonts.condensed
                 font.pixelSize: 66
+                minimumPixelSize: 38
+                fontSizeMode: Text.HorizontalFit
                 font.weight: Font.Bold
                 font.letterSpacing: 1
             }
@@ -4136,8 +4741,10 @@ FocusScope {
                 x: 58
                 y: 148
                 width: root.homeViewMode === "list" ?
-                       ((!root.dualScreenDevice ? singleScreenPip.x : homeListBoxArt.x) - x - 28) :
-                       parent.width - 116
+                       ((!root.dualScreenDevice ?
+                         Math.min(singleScreenPip.x, homeListBoxArt.x) :
+                         homeListBoxArt.x) - x - 28) :
+                       ((!root.dualScreenDevice ? singleScreenPip.x : parent.width - 58) - x - 28)
                 visible: root.homeZone > 0
                 text: root.homeListBrowsingSystems ?
                       systemModel.get(systemRail.currentIndex).name :
@@ -4177,13 +4784,30 @@ FocusScope {
                 font.letterSpacing: 2
             }
 
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                y: 964
+                visible: root.homeViewMode === "covers" &&
+                         !root.settingsOpen && root.coverVerticalNavigationText() !== ""
+                text: root.coverVerticalNavigationText()
+                color: root.accent
+                font.family: global.fonts.sans
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                font.letterSpacing: 1.8
+            }
+
             ListView {
                 id: systemRail
-                visible: root.homeViewMode === "covers"
-                x: 0
-                y: 350
-                width: parent.width
-                height: 176
+                visible: root.coverZoneVisible(0)
+                x: 48
+                y: root.coverContentTop +
+                   (root.coverZonePosition(0) - root.coverWindowStart()) *
+                   root.coverRowSlotHeight +
+                   (root.coverViewRowCount === 1 ? 112 :
+                    (root.coverViewRowCount === 2 ? 50 : 34))
+                width: parent.width - 96
+                height: root.coverRowSlotHeight - 38
                 orientation: ListView.Horizontal
                 model: systemModel
                 spacing: 14
@@ -4191,18 +4815,8 @@ FocusScope {
                 // rail has ample vertical breathing room, so do not cut its
                 // top rim at the ListView boundary.
                 clip: false
-                // Inline end spacers let the first and last real delegates
-                // reach the same centered position as every middle system.
-                // Without them, Arcade and Switch stop at the screen edge and
-                // their scaled selection rims are physically clipped.
-                header: Item {
-                    width: Math.max(0, (systemRail.width - 230) / 2)
-                    height: systemRail.height
-                }
-                footer: Item {
-                    width: Math.max(0, (systemRail.width - 230) / 2)
-                    height: systemRail.height
-                }
+                // No half-screen end spacers: the first/last cards clamp to
+                // the 48 px safe edge while middle selections remain centered.
                 focus: root.homeZone === 0
                 // Keep the selected platform centered, but visibly translate
                 // the entire rail in the direction of travel. The short,
@@ -4213,8 +4827,10 @@ FocusScope {
                 // The rail spans the full display. The preferred position is
                 // the selected delegate's leading edge, so offset by half its
                 // width to center it on the physical screen precisely.
-                preferredHighlightBegin: (width - 230) / 2
-                preferredHighlightEnd: (width - 230) / 2
+                preferredHighlightBegin: (width -
+                        (root.coverViewRowCount === 1 ? 360 :
+                         (root.coverViewRowCount === 2 ? 250 : 210))) / 2
+                preferredHighlightEnd: preferredHighlightBegin
                 keyNavigationWraps: true
                 keyNavigationEnabled: false
                 onCurrentIndexChanged: {
@@ -4237,8 +4853,10 @@ FocusScope {
                 delegate: Item {
                     id: systemCard
                     property bool isSelected: ListView.isCurrentItem && root.homeZone === 0
-                    width: 230
-                    height: 160
+                    width: root.coverViewRowCount === 1 ? 360 :
+                           (root.coverViewRowCount === 2 ? 250 : 210)
+                    height: root.coverViewRowCount === 1 ? 250 :
+                            (root.coverViewRowCount === 2 ? 174 : 146)
                     scale: isSelected ? 1.10 : 0.88
                     opacity: isSelected ? 1.0 : 0.46
                     Behavior on scale { NumberAnimation { duration: 145; easing.type: Easing.OutCubic } }
@@ -4256,7 +4874,7 @@ FocusScope {
                     Rectangle {
                         x: 18
                         y: 18
-                        width: 46
+                        width: root.coverViewRowCount === 1 ? 64 : 46
                         height: systemCard.isSelected ? 7 : 4
                         color: model.accent
                     }
@@ -4266,16 +4884,16 @@ FocusScope {
                         x: 12
                         // Vertically center the wordmark in the clear space
                         // between the accent stroke and the year label.
-                        y: 30
+                        y: 28
                         width: parent.width - 24
-                        height: 96
+                        height: parent.height - 72
                         source: model.folder === "all" ? "" :
                                 Qt.resolvedUrl("assets/logos-png/" + model.folder + ".png")
                         visible: model.folder !== "all" && status !== Image.Error
                         fillMode: Image.PreserveAspectFit
                         horizontalAlignment: model.folder === "windows" ?
                                 Image.AlignLeft : Image.AlignHCenter
-                        asynchronous: true
+                        asynchronous: false
                         cache: true
                         smooth: true
                         mipmap: true
@@ -4285,9 +4903,9 @@ FocusScope {
 
                     Text {
                         x: 12
-                        y: 34
+                        y: 30
                         width: parent.width - 24
-                        height: 88
+                        height: parent.height - 74
                         visible: model.folder === "all" || systemLogo.status === Image.Error
                         text: model.folder === "all" ? "ALL\nSYSTEMS" : model.mark
                         color: "#f4f7fc"
@@ -4295,19 +4913,19 @@ FocusScope {
                         verticalAlignment: Text.AlignVCenter
                         lineHeight: 0.82
                         font.family: global.fonts.condensed
-                        font.pixelSize: 38
+                        font.pixelSize: root.coverViewRowCount === 1 ? 52 : 38
                         font.weight: Font.Black
                         font.letterSpacing: 2
                     }
 
                     Text {
                         x: 18
-                        y: 134
+                        y: parent.height - 28
                         width: parent.width - 34
                         text: model.years
                         color: model.accent
                         font.family: global.fonts.sans
-                        font.pixelSize: 12
+                        font.pixelSize: root.coverViewRowCount === 1 ? 14 : 12
                         font.weight: Font.DemiBold
                         font.letterSpacing: 2
                     }
@@ -4324,7 +4942,7 @@ FocusScope {
             }
 
             Rectangle {
-                visible: root.homeViewMode === "covers"
+                visible: false
                 x: 58
                 y: 580
                 width: parent.width - 116
@@ -4334,28 +4952,32 @@ FocusScope {
 
             Item {
                 id: shelfViewport
-                visible: root.homeViewMode === "covers"
+                opacity: root.homeViewMode === "covers" ? 1 : 0
+                visible: opacity > 0
                 x: 0
-                y: 594
+                y: root.coverContentTop
                 width: parent.width
-                height: 446
+                height: root.coverContentHeight
                 clip: true
+                Behavior on opacity {
+                    NumberAnimation { duration: root.viewTransitionsEnabled ? 220 : 0 }
+                }
 
                 Item {
                     id: shelfStack
                     width: parent.width
-                    height: 3080
-                    y: -Math.max(0, root.homeZone - 1) * 440
+                    height: root.coverRowSlotHeight * 8
+                    y: -root.coverWindowStart() * root.coverRowSlotHeight
                     Behavior on y { NumberAnimation { duration: 210; easing.type: Easing.OutCubic } }
 
                     Item {
-                        y: 0
+                        y: root.coverZonePosition(1) * root.coverRowSlotHeight
                         width: parent.width
-                        height: 440
+                        height: root.coverRowSlotHeight
 
                         Text {
                             x: 58
-                            y: 16
+                            y: 10
                             text: "CONTINUE PLAYING"
                             color: root.homeZone === 1 ? "white" : "#8f98aa"
                             font.family: global.fonts.sans
@@ -4367,22 +4989,20 @@ FocusScope {
                         ListView {
                             id: recentRail
                             property int zone: 1
-                            x: 0
-                            y: 66
-                            width: parent.width
-                            height: 360
+                            x: 48
+                            y: 44
+                            width: parent.width - 96
+                            height: parent.parent.height - 46
                             orientation: ListView.Horizontal
                             model: recentModel
                             delegate: homeShelfCard
                             spacing: 18
                             clip: false
-                            header: Item { width: Math.max(0, (recentRail.width - 238) / 2); height: recentRail.height }
-                            footer: Item { width: Math.max(0, (recentRail.width - 238) / 2); height: recentRail.height }
                             focus: root.homeZone === 1
                             highlightMoveDuration: 180
                             highlightRangeMode: ListView.ApplyRange
-                            preferredHighlightBegin: (width - 238) / 2
-                            preferredHighlightEnd: (width - 238) / 2
+                            preferredHighlightBegin: (width - root.coverShelfCardWidth) / 2
+                            preferredHighlightEnd: preferredHighlightBegin
                             keyNavigationWraps: true
                             keyNavigationEnabled: false
                             onCurrentIndexChanged: if (root.previewReady && root.page === "home" && root.homeZone === 1) root.activateShelfPreview(1)
@@ -4390,13 +5010,13 @@ FocusScope {
                     }
 
                     Item {
-                        y: 440
+                        y: root.coverZonePosition(2) * root.coverRowSlotHeight
                         width: parent.width
-                        height: 440
+                        height: root.coverRowSlotHeight
 
                         Text {
                             x: 58
-                            y: 16
+                            y: 10
                             text: "MOST PLAYED"
                             color: root.homeZone === 2 ? "white" : "#8f98aa"
                             font.family: global.fonts.sans
@@ -4408,22 +5028,20 @@ FocusScope {
                         ListView {
                             id: mostPlayedRail
                             property int zone: 2
-                            x: 0
-                            y: 66
-                            width: parent.width
-                            height: 360
+                            x: 48
+                            y: 44
+                            width: parent.width - 96
+                            height: parent.parent.height - 46
                             orientation: ListView.Horizontal
                             model: mostPlayedModel
                             delegate: homeShelfCard
                             spacing: 18
                             clip: false
-                            header: Item { width: Math.max(0, (mostPlayedRail.width - 238) / 2); height: mostPlayedRail.height }
-                            footer: Item { width: Math.max(0, (mostPlayedRail.width - 238) / 2); height: mostPlayedRail.height }
                             focus: root.homeZone === 2
                             highlightMoveDuration: 180
                             highlightRangeMode: ListView.ApplyRange
-                            preferredHighlightBegin: (width - 238) / 2
-                            preferredHighlightEnd: (width - 238) / 2
+                            preferredHighlightBegin: (width - root.coverShelfCardWidth) / 2
+                            preferredHighlightEnd: preferredHighlightBegin
                             keyNavigationWraps: true
                             keyNavigationEnabled: false
                             onCurrentIndexChanged: if (root.previewReady && root.page === "home" && root.homeZone === 2) root.activateShelfPreview(2)
@@ -4431,13 +5049,13 @@ FocusScope {
                     }
 
                     Item {
-                        y: 880
+                        y: root.coverZonePosition(3) * root.coverRowSlotHeight
                         width: parent.width
-                        height: 440
+                        height: root.coverRowSlotHeight
 
                         Text {
                             x: 58
-                            y: 16
+                            y: 10
                             text: "RECENTLY ADDED"
                             color: root.homeZone === 3 ? "white" : "#8f98aa"
                             font.family: global.fonts.sans
@@ -4449,22 +5067,20 @@ FocusScope {
                         ListView {
                             id: recentlyAddedRail
                             property int zone: 3
-                            x: 0
-                            y: 66
-                            width: parent.width
-                            height: 360
+                            x: 48
+                            y: 44
+                            width: parent.width - 96
+                            height: parent.parent.height - 46
                             orientation: ListView.Horizontal
                             model: recentlyAddedModel
                             delegate: homeShelfCard
                             spacing: 18
                             clip: false
-                            header: Item { width: Math.max(0, (recentlyAddedRail.width - 238) / 2); height: recentlyAddedRail.height }
-                            footer: Item { width: Math.max(0, (recentlyAddedRail.width - 238) / 2); height: recentlyAddedRail.height }
                             focus: root.homeZone === 3
                             highlightMoveDuration: 180
                             highlightRangeMode: ListView.ApplyRange
-                            preferredHighlightBegin: (width - 238) / 2
-                            preferredHighlightEnd: (width - 238) / 2
+                            preferredHighlightBegin: (width - root.coverShelfCardWidth) / 2
+                            preferredHighlightEnd: preferredHighlightBegin
                             keyNavigationWraps: true
                             keyNavigationEnabled: false
                             onCurrentIndexChanged: if (root.previewReady && root.page === "home" && root.homeZone === 3) root.activateShelfPreview(3)
@@ -4472,13 +5088,13 @@ FocusScope {
                     }
 
                     Item {
-                        y: 1320
+                        y: root.coverZonePosition(4) * root.coverRowSlotHeight
                         width: parent.width
-                        height: 440
+                        height: root.coverRowSlotHeight
 
                         Text {
                             x: 58
-                            y: 16
+                            y: 10
                             text: "CRITIC SCORE"
                             color: root.homeZone === 4 ? "white" : "#8f98aa"
                             font.family: global.fonts.sans
@@ -4490,22 +5106,20 @@ FocusScope {
                         ListView {
                             id: criticRail
                             property int zone: 4
-                            x: 0
-                            y: 66
-                            width: parent.width
-                            height: 360
+                            x: 48
+                            y: 44
+                            width: parent.width - 96
+                            height: parent.parent.height - 46
                             orientation: ListView.Horizontal
                             model: allCriticSortModel
                             delegate: homeShelfCard
                             spacing: 18
                             clip: false
-                            header: Item { width: Math.max(0, (criticRail.width - 238) / 2); height: criticRail.height }
-                            footer: Item { width: Math.max(0, (criticRail.width - 238) / 2); height: criticRail.height }
                             focus: root.homeZone === 4
                             highlightMoveDuration: 180
                             highlightRangeMode: ListView.ApplyRange
-                            preferredHighlightBegin: (width - 238) / 2
-                            preferredHighlightEnd: (width - 238) / 2
+                            preferredHighlightBegin: (width - root.coverShelfCardWidth) / 2
+                            preferredHighlightEnd: preferredHighlightBegin
                             keyNavigationWraps: true
                             keyNavigationEnabled: false
                             onCurrentIndexChanged: if (root.previewReady && root.page === "home" && root.homeZone === 4) root.activateShelfPreview(4)
@@ -4513,12 +5127,12 @@ FocusScope {
                     }
 
                     Item {
-                        y: 1760
+                        y: root.coverZonePosition(5) * root.coverRowSlotHeight
                         width: parent.width
-                        height: 440
+                        height: root.coverRowSlotHeight
 
                         Text {
-                            x: 58; y: 16
+                            x: 58; y: 10
                             text: "USER SCORE"
                             color: root.homeZone === 5 ? "white" : "#8f98aa"
                             font.family: global.fonts.sans
@@ -4530,19 +5144,17 @@ FocusScope {
                         ListView {
                             id: userRail
                             property int zone: 5
-                            x: 0; y: 66
-                            width: parent.width; height: 360
+                            x: 48; y: 44
+                            width: parent.width - 96; height: parent.parent.height - 46
                             orientation: ListView.Horizontal
                             model: allUserSortModel
                             delegate: homeShelfCard
                             spacing: 18; clip: false
-                            header: Item { width: Math.max(0, (userRail.width - 238) / 2); height: userRail.height }
-                            footer: Item { width: Math.max(0, (userRail.width - 238) / 2); height: userRail.height }
                             focus: root.homeZone === 5
                             highlightMoveDuration: 180
                             highlightRangeMode: ListView.ApplyRange
-                            preferredHighlightBegin: (width - 238) / 2
-                            preferredHighlightEnd: (width - 238) / 2
+                            preferredHighlightBegin: (width - root.coverShelfCardWidth) / 2
+                            preferredHighlightEnd: preferredHighlightBegin
                             keyNavigationWraps: true
                             keyNavigationEnabled: false
                             onCurrentIndexChanged: if (root.previewReady && root.page === "home" && root.homeZone === 5) root.activateShelfPreview(5)
@@ -4550,12 +5162,12 @@ FocusScope {
                     }
 
                     Item {
-                        y: 2200
+                        y: root.coverZonePosition(6) * root.coverRowSlotHeight
                         width: parent.width
-                        height: 440
+                        height: root.coverRowSlotHeight
 
                         Text {
-                            x: 58; y: 16
+                            x: 58; y: 10
                             text: "A–Z"
                             color: root.homeZone === 6 ? "white" : "#8f98aa"
                             font.family: global.fonts.sans
@@ -4567,19 +5179,17 @@ FocusScope {
                         ListView {
                             id: alphaRail
                             property int zone: 6
-                            x: 0; y: 66
-                            width: parent.width; height: 360
+                            x: 48; y: 44
+                            width: parent.width - 96; height: parent.parent.height - 46
                             orientation: ListView.Horizontal
                             model: allAlphaSortModel
                             delegate: homeShelfCard
                             spacing: 18; clip: false
-                            header: Item { width: Math.max(0, (alphaRail.width - 238) / 2); height: alphaRail.height }
-                            footer: Item { width: Math.max(0, (alphaRail.width - 238) / 2); height: alphaRail.height }
                             focus: root.homeZone === 6
                             highlightMoveDuration: 180
                             highlightRangeMode: ListView.ApplyRange
-                            preferredHighlightBegin: (width - 238) / 2
-                            preferredHighlightEnd: (width - 238) / 2
+                            preferredHighlightBegin: (width - root.coverShelfCardWidth) / 2
+                            preferredHighlightEnd: preferredHighlightBegin
                             keyNavigationWraps: true
                             keyNavigationEnabled: false
                             onCurrentIndexChanged: if (root.previewReady && root.page === "home" && root.homeZone === 6) root.activateShelfPreview(6)
@@ -4587,12 +5197,12 @@ FocusScope {
                     }
 
                     Item {
-                        y: 2640
+                        y: root.coverZonePosition(7) * root.coverRowSlotHeight
                         width: parent.width
-                        height: 440
+                        height: root.coverRowSlotHeight
 
                         Text {
-                            x: 58; y: 16
+                            x: 58; y: 10
                             text: "RELEASE DATE"
                             color: root.homeZone === 7 ? "white" : "#8f98aa"
                             font.family: global.fonts.sans
@@ -4604,19 +5214,17 @@ FocusScope {
                         ListView {
                             id: releaseRail
                             property int zone: 7
-                            x: 0; y: 66
-                            width: parent.width; height: 360
+                            x: 48; y: 44
+                            width: parent.width - 96; height: parent.parent.height - 46
                             orientation: ListView.Horizontal
                             model: allReleaseSortModel
                             delegate: homeShelfCard
                             spacing: 18; clip: false
-                            header: Item { width: Math.max(0, (releaseRail.width - 238) / 2); height: releaseRail.height }
-                            footer: Item { width: Math.max(0, (releaseRail.width - 238) / 2); height: releaseRail.height }
                             focus: root.homeZone === 7
                             highlightMoveDuration: 180
                             highlightRangeMode: ListView.ApplyRange
-                            preferredHighlightBegin: (width - 238) / 2
-                            preferredHighlightEnd: (width - 238) / 2
+                            preferredHighlightBegin: (width - root.coverShelfCardWidth) / 2
+                            preferredHighlightEnd: preferredHighlightBegin
                             keyNavigationWraps: true
                             keyNavigationEnabled: false
                             onCurrentIndexChanged: if (root.previewReady && root.page === "home" && root.homeZone === 7) root.activateShelfPreview(7)
@@ -4629,22 +5237,76 @@ FocusScope {
                 id: homeListBoxArt
                 visible: root.homeViewMode === "list" &&
                          root.homeListFocusColumn === 1 && root.activeGame
-                x: parent.width - width - 58
-                y: 108
-                width: 150
-                height: 198
+                x: !root.dualScreenDevice && root.singleScreenMediaSwapped ?
+                   parent.width - 330 - 226 : parent.width - width - 58
+                // Pin the visible artwork column to the category controls.
+                // Using their actual geometry avoids drift if either header
+                // layout changes and works for both Thor and single-screen UI.
+                y: homeListPanel.y + homeCategoryTabs.y +
+                   homeCategoryTabs.height - height
+                // On dual-screen hardware the tab strip now ends beside this
+                // column, so artwork can occupy the complete header height
+                // instead of being squeezed above Release. Keep conventional
+                // one-screen geometry compact so it never collides with PIP.
+                width: root.dualScreenDevice ? 246 : 150
+                height: root.dualScreenDevice ? 274 : 198
                 z: 82
 
                 Image {
+                    id: homeListBoxArtA
                     anchors.fill: parent
-                    source: root.activeGame ? (root.activeGame.assets.boxFront || "") : ""
+                    source: root.boxArtworkSourceA
                     fillMode: Image.PreserveAspectFit
                     horizontalAlignment: Image.AlignRight
-                    verticalAlignment: Image.AlignVCenter
-                    asynchronous: true
+                    verticalAlignment: Image.AlignBottom
+                    asynchronous: false
                     cache: true
                     smooth: true
                     mipmap: true
+                    opacity: root.boxArtworkSlot === 0 ? 1 : 0
+                    onStatusChanged: if (status === Image.Ready) root.promoteBoxArtwork(0)
+                }
+
+                Image {
+                    id: homeListBoxArtB
+                    anchors.fill: parent
+                    source: root.boxArtworkSourceB
+                    fillMode: Image.PreserveAspectFit
+                    horizontalAlignment: Image.AlignRight
+                    verticalAlignment: Image.AlignBottom
+                    asynchronous: false
+                    cache: true
+                    smooth: true
+                    mipmap: true
+                    opacity: root.boxArtworkSlot === 1 ? 1 : 0
+                    onStatusChanged: if (status === Image.Ready) root.promoteBoxArtwork(1)
+                }
+
+                Image {
+                    id: boxArtworkPreloadPrevious
+                    x: -4; y: -4; width: 2; height: 2; opacity: 0
+                    asynchronous: true
+                    cache: true
+                    sourceSize.width: 640
+                    sourceSize.height: 900
+                }
+
+                Image {
+                    id: boxArtworkPreloadNext
+                    x: -4; y: -4; width: 2; height: 2; opacity: 0
+                    asynchronous: true
+                    cache: true
+                    sourceSize.width: 640
+                    sourceSize.height: 900
+                }
+
+                Image {
+                    id: boxArtworkPreloadEntry
+                    x: -4; y: -4; width: 2; height: 2; opacity: 0
+                    asynchronous: true
+                    cache: true
+                    sourceSize.width: 640
+                    sourceSize.height: 900
                 }
             }
 
@@ -4654,7 +5316,16 @@ FocusScope {
                 y: 324
                 width: parent.width - 96
                 height: 708
-                visible: root.homeViewMode === "list"
+                opacity: root.homeViewMode === "list" ? 1 : 0
+                visible: opacity > 0
+                scale: root.homeViewMode === "list" ? 1 : 0.985
+                Behavior on opacity {
+                    NumberAnimation { duration: root.viewTransitionsEnabled ? 230 : 0 }
+                }
+                Behavior on scale {
+                    NumberAnimation { duration: root.viewTransitionsEnabled ? 240 : 0;
+                                      easing.type: Easing.OutCubic }
+                }
 
                 Rectangle {
                     x: 0
@@ -4707,7 +5378,7 @@ FocusScope {
                                 visible: status !== Image.Error
                                 fillMode: Image.PreserveAspectFit
                                 horizontalAlignment: Image.AlignLeft
-                                asynchronous: true
+                                asynchronous: false
                                 cache: true
                                 smooth: true
                                 mipmap: true
@@ -4774,7 +5445,9 @@ FocusScope {
                 }
 
                 Item {
-                    x: 584
+                    // Twelve pixels of separation from the system column is
+                    // sufficient and gives the seven-category strip more room.
+                    x: 572
                     y: 0
                     width: parent.width - x
                     height: parent.height
@@ -4783,9 +5456,15 @@ FocusScope {
                         id: homeCategoryTabs
                         x: 0
                         y: 0
-                        width: parent.width
+                        // Keep every tab's geometry fixed while focus or the
+                        // selected system changes. All Systems intentionally
+                        // leaves the reserved box-art column empty instead of
+                        // making seven controls jump wider for one state.
+                        width: root.dualScreenDevice ?
+                               Math.max(700, homeListBoxArt.x - homeListPanel.x -
+                                        parent.x - 24) : parent.width
                         height: 58
-                        spacing: 8
+                        spacing: 6
 
                         Repeater {
                             model: ["CONTINUE", "MOST PLAYED", "RECENTLY ADDED",
@@ -4793,7 +5472,7 @@ FocusScope {
                             Rectangle {
                                 property int category: index + 1
                                 property bool isSelected: root.homeListCategory === category
-                                width: (homeCategoryTabs.width - 48) / 7
+                                width: (homeCategoryTabs.width - 36) / 7
                                 height: 58
                                 color: isSelected ?
                                        Qt.rgba(root.accent.r, root.accent.g,
@@ -4862,7 +5541,7 @@ FocusScope {
                             property var game: root.homeListGameAt(index)
                             width: homeListRail.width
                             height: 76
-                            color: isSelected ? root.accentForGame(game) :
+                            color: isSelected ? root.homeListAccentForGame(game) :
                                    (index % 2 === 0 ? "#78060a10" : "#86060a10")
                             border.width: 0
                             radius: 7
@@ -4896,7 +5575,8 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                                 width: 480
                                 text: root.gameFactsText(game)
-                                color: homeGameRow.isSelected ? "#03050a" : root.accentForGame(game)
+                                color: homeGameRow.isSelected ? "#03050a" :
+                                       root.homeListAccentForGame(game)
                                 horizontalAlignment: Text.AlignRight
                                 fontSizeMode: Text.HorizontalFit
                                 minimumPixelSize: 14
@@ -4938,8 +5618,23 @@ FocusScope {
             id: gamesPage
             anchors.fill: parent
             opacity: root.page === "games" ? 1 : 0
+            scale: root.page === "games" ? 1 : 0.985
             visible: opacity > 0
-            Behavior on opacity { NumberAnimation { duration: 100 } }
+            Behavior on opacity {
+                NumberAnimation { duration: root.viewTransitionsEnabled ? 240 : 0;
+                                  easing.type: Easing.OutCubic }
+            }
+            Behavior on scale {
+                NumberAnimation { duration: root.viewTransitionsEnabled ? 260 : 0;
+                                  easing.type: Easing.OutCubic }
+            }
+            transform: Translate {
+                x: root.page === "games" ? 0 : 72
+                Behavior on x {
+                    NumberAnimation { duration: root.viewTransitionsEnabled ? 260 : 0;
+                                      easing.type: Easing.OutCubic }
+                }
+            }
 
             Text {
                 id: allSystemsLibraryLabel
@@ -4981,7 +5676,8 @@ FocusScope {
                 // footprint so long game titles and facts never render under
                 // the PIP, including the larger single-screen list preview.
                 width: !root.dualScreenDevice ?
-                       parent.width - 116 - singleScreenPip.width - 46 :
+                       ((root.singleScreenMediaSwapped && root.gameViewMode === "list" ?
+                         parent.width - 624 - 56 : singleScreenPip.x) - x - 28) :
                        parent.width - 116
                 height: 68
                 text: root.activeGame ? root.displayTitle(root.activeGame) :
@@ -5119,8 +5815,10 @@ FocusScope {
                 id: gameRail
                 x: 48
                 y: 450
-                width: parent.width - 48
-                height: 560
+                width: parent.width - 96
+                // Reserve a real footer safe area. Cards may scale within this
+                // rail, but can never render behind the view label or controls.
+                height: 500
                 orientation: ListView.Horizontal
                 model: activeGameModel
                 spacing: 22
@@ -5132,10 +5830,14 @@ FocusScope {
                 preferredHighlightEnd: (width - 250) / 2
                 keyNavigationWraps: true
                 keyNavigationEnabled: false
-                visible: root.gameViewMode === "covers"
+                opacity: root.gameViewMode === "covers" ? 1 : 0
+                visible: opacity > 0
+                Behavior on opacity {
+                    NumberAnimation { duration: root.viewTransitionsEnabled ? 210 : 0 }
+                }
                 onCurrentIndexChanged: {
                     if (root.gameViewMode === "list")
-                        gameListRail.positionViewAtIndex(currentIndex, ListView.Contain)
+                        root.positionGameListAtIndex(currentIndex)
                     if (root.previewReady && root.page === "games") {
                         root.activateGamePreview()
                     }
@@ -5234,14 +5936,21 @@ FocusScope {
                 x: 48
                 y: !root.dualScreenDevice ? 484 : 324
                 width: parent.width - 96
-                // Thor keeps nine rows. A one-display handheld keeps seven,
-                // freeing exactly two row cadences for the top-right PIP.
-                height: !root.dualScreenDevice ? 556 : 716
-                visible: root.gameViewMode === "list"
+                // Show only complete rows and stop above the persistent footer:
+                // eight rows on Thor, six beside a single-screen PIP.
+                height: !root.dualScreenDevice ? 476 : 636
+                opacity: root.gameViewMode === "list" ? 1 : 0
+                visible: opacity > 0
+                Behavior on opacity {
+                    NumberAnimation { duration: root.viewTransitionsEnabled ? 210 : 0 }
+                }
 
                 Item {
                     id: selectedGameArtPanel
-                    x: 0
+                    property bool swappedSingleScreen: !root.dualScreenDevice &&
+                            root.singleScreenMediaSwapped
+                    x: swappedSingleScreen ?
+                       root.width - 624 - 56 - listViewPanel.x : 0
                     // The Flip's list begins lower to reserve room for PIP,
                     // but its cover should not begin with that list. Give the
                     // single-screen cover its own square viewport between the
@@ -5250,29 +5959,42 @@ FocusScope {
                     // Thor: the sort row ends at y=394 and this parent begins
                     // at y=324, so 90 px provides a real gap before artwork.
                     // The Flip retains its separate single-screen correction.
-                    y: !root.dualScreenDevice ? -76 : 90
-                    width: 600
-                    height: !root.dualScreenDevice ? 600 : parent.height - 90
-                    property real coverAspect: listCover.status === Image.Ready &&
-                            listCover.sourceSize.height > 0 ?
-                            listCover.sourceSize.width / listCover.sourceSize.height : 0.72
+                    y: swappedSingleScreen ? 102 - listViewPanel.y :
+                       (!root.dualScreenDevice ? -76 : 90)
+                    width: swappedSingleScreen ? 624 : 600
+                    height: swappedSingleScreen ? Math.round(624 * 9 / 16) :
+                            (!root.dualScreenDevice ? 540 : parent.height - 90)
                     // Use equal outer padding on every side and center within
                     // the entire list panel. The former 106 px top inset made
                     // every cover appear visibly low on a single-screen Flip.
-                    property real coverWidth: Math.min(Math.max(1, width - 36),
-                                                       Math.max(1, height - 36) * coverAspect)
-                    property real coverHeight: coverWidth / coverAspect
+                    property real coverWidth: Math.max(1, width - 36)
+                    property real coverHeight: Math.max(1, height - 36)
 
                     Image {
                         id: listCover
                         anchors.centerIn: parent
                         width: parent.coverWidth
                         height: parent.coverHeight
-                        source: root.activeGame ?
-                                (root.activeGame.assets.boxFront || "") : ""
+                        source: root.boxArtworkSourceA
                         fillMode: Image.PreserveAspectFit
-                        asynchronous: true
+                        asynchronous: false
+                        cache: true
                         smooth: true
+                        mipmap: true
+                        opacity: root.boxArtworkSlot === 0 ? 1 : 0
+                    }
+
+                    Image {
+                        anchors.centerIn: parent
+                        width: parent.coverWidth
+                        height: parent.coverHeight
+                        source: root.boxArtworkSourceB
+                        fillMode: Image.PreserveAspectFit
+                        asynchronous: false
+                        cache: true
+                        smooth: true
+                        mipmap: true
+                        opacity: root.boxArtworkSlot === 1 ? 1 : 0
                     }
 
                     Text {
@@ -5300,12 +6022,18 @@ FocusScope {
                     currentIndex: gameRail.currentIndex
                     spacing: 4
                     clip: true
+                    cacheBuffer: height * 2
+                    snapMode: ListView.SnapToItem
+                    boundsBehavior: Flickable.StopAtBounds
                     focus: false
                     keyNavigationEnabled: false
                     highlightMoveDuration: 100
                     highlightRangeMode: ListView.ApplyRange
-                    preferredHighlightBegin: (height - 76) / 2
-                    preferredHighlightEnd: (height - 76) / 2
+                    // Eight complete 76 px rows plus seven 4 px gaps exactly
+                    // fill this viewport. Put the selected row on a 80 px
+                    // stride so centering can never expose half a row.
+                    preferredHighlightBegin: 240
+                    preferredHighlightEnd: 240
 
                     delegate: Rectangle {
                         id: gameListRow
@@ -5424,12 +6152,22 @@ FocusScope {
                 }
             }
 
+            Rectangle {
+                z: 80
+                x: 48
+                y: 966
+                width: parent.width - 96
+                height: 58
+                color: "#dc07090d"
+            }
+
             Text {
+                z: 81
                 anchors.right: parent.right
                 anchors.rightMargin: 62
-                y: 998
-                text: "L1 / R1  SORT     L2 / R2  SYSTEM     Y  VIEW: " + root.gameViewMode.toUpperCase() +
-                      "     X  SETTINGS     D-PAD  NAVIGATE     B  BACK     A  PLAY     HOLD GAME  OPTIONS"
+                y: 986
+                text: "L1 / R1  SORT     L2 / R2  SYSTEM     LEFT / RIGHT  PAGE     Y  VIEW: " + root.gameViewMode.toUpperCase() +
+                      "     X  SETTINGS     RIGHT STICK  VIEWS     B  BACK     A  PLAY     HOLD GAME  OPTIONS"
                 color: "#7f899c"
                 font.family: global.fonts.sans
                 font.pixelSize: 15
@@ -5446,8 +6184,8 @@ FocusScope {
         y: 998
         visible: root.page === "home" && !root.settingsOpen
         text: root.homeViewMode === "list" ?
-              "L1 / R1  CATEGORY     L2 / R2  SYSTEM     LEFT / RIGHT  VIEW     UP / DOWN  SELECT     Y  LAYOUT     X  SETTINGS     B  SYSTEM LIST     A  PLAY" :
-              "L1 / R1  CATEGORY     L2 / R2  SYSTEM     Y  LAYOUT     X  SETTINGS     D-PAD  NAVIGATE     A  OPEN"
+              "L1 / R1  CATEGORY     L2 / R2  SYSTEM     LEFT / RIGHT  PAGE     UP / DOWN  SELECT     Y  LAYOUT     X  SETTINGS     RIGHT STICK  VIEWS     B  SYSTEM LIST     A  PLAY" :
+              "L1 / R1  CATEGORY     L2 / R2  SYSTEM     Y  LAYOUT     X  SETTINGS     D-PAD  NAVIGATE     RIGHT STICK  VIEWS     A  OPEN"
         color: "#7f899c"
         font.family: global.fonts.sans
         font.pixelSize: 15
@@ -5467,7 +6205,7 @@ FocusScope {
         z: 90
         anchors.left: parent.left
         anchors.leftMargin: 62
-        y: 998
+        y: root.page === "games" ? 986 : 998
         visible: !root.settingsOpen
         text: root.currentViewName
         color: "#7f899c"
@@ -5576,17 +6314,24 @@ FocusScope {
         visible: root.gameActionOpen
         color: "#e805080d"
 
-        MouseArea { anchors.fill: parent }
+        MouseArea {
+            anchors.fill: parent
+            onClicked: root.closeGameActions()
+        }
 
         Rectangle {
             id: gameActionPanel
             anchors.centerIn: parent
             width: 820
-            height: 520
+            height: 570
             color: "#fb0d121a"
             border.width: 2
             border.color: root.accent
             radius: 10
+
+            // Swallow taps on empty dialog space; only the dimmed area outside
+            // the panel dismisses it. Controls declared below remain on top.
+            MouseArea { anchors.fill: parent }
 
             Text {
                 x: 44
@@ -5605,6 +6350,7 @@ FocusScope {
                 y: 94
                 text: root.gameActionMode === "menu" ? "GAME OPTIONS" :
                       root.gameActionMode === "rename" ? "RENAME GAME" :
+                      root.gameActionMode === "confirm-remove" ? "CONFIRM REMOVE FROM LIST" :
                       root.gameActionMode === "confirm-delete" ? "CONFIRM DELETE" : "LUCENT LIBRARY"
                 color: root.accent
                 font.family: global.fonts.sans
@@ -5619,9 +6365,9 @@ FocusScope {
 
                 Rectangle {
                     x: 44
-                    y: 150
+                    y: 136
                     width: parent.width - 88
-                    height: 108
+                    height: 92
                     color: root.gameActionIndex === 0 ? root.accent : "#b3121822"
                     border.width: root.gameActionIndex === 0 ? 2 : 1
                     border.color: root.gameActionIndex === 0 ? Qt.lighter(root.accent, 1.18) : "#42ffffff"
@@ -5644,37 +6390,102 @@ FocusScope {
 
                 Rectangle {
                     x: 44
-                    y: 278
+                    y: 242
                     width: parent.width - 88
-                    height: 108
-                    color: root.gameActionIndex === 1 ? "#ff6d70" : "#b3121822"
+                    height: 92
+                    visible: root.gameActionAllowsRemoveFromList()
+                    color: root.gameActionIndex === 1 ? root.accent : "#b3121822"
                     border.width: root.gameActionIndex === 1 ? 2 : 1
-                    border.color: root.gameActionIndex === 1 ? "#ff9b9d" : "#42ffffff"
+                    border.color: root.gameActionIndex === 1 ? Qt.lighter(root.accent, 1.18) : "#42ffffff"
                     radius: 7
 
                     Text {
                         anchors.centerIn: parent
-                        text: "DELETE"
-                        color: root.gameActionIndex === 1 ? "#120405" : "white"
+                        text: "REMOVE FROM " + root.homeShelfName(root.gameActionCategory)
+                        color: root.gameActionIndex === 1 ? "#05070b" : "white"
                         font.family: global.fonts.sans
-                        font.pixelSize: 26
+                        font.pixelSize: 24
                         font.weight: Font.Bold
                         font.letterSpacing: 1.2
                     }
                     MouseArea {
                         anchors.fill: parent
-                        onClicked: { root.gameActionIndex = 1; root.gameActionMode = "confirm-delete" }
+                        onClicked: { root.gameActionIndex = 1; root.gameActionMode = "confirm-remove" }
+                    }
+                }
+
+                Rectangle {
+                    property int deleteIndex: root.gameActionAllowsRemoveFromList() ? 2 : 1
+                    x: 44
+                    y: root.gameActionAllowsRemoveFromList() ? 348 : 242
+                    width: parent.width - 88
+                    height: 92
+                    color: root.gameActionIndex === deleteIndex ? "#ff6d70" : "#b3121822"
+                    border.width: root.gameActionIndex === deleteIndex ? 2 : 1
+                    border.color: root.gameActionIndex === deleteIndex ? "#ff9b9d" : "#42ffffff"
+                    radius: 7
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "DELETE ROM FILE"
+                        color: root.gameActionIndex === parent.deleteIndex ? "#120405" : "white"
+                        font.family: global.fonts.sans
+                        font.pixelSize: 24
+                        font.weight: Font.Bold
+                        font.letterSpacing: 1.2
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            root.gameActionIndex = parent.deleteIndex
+                            root.gameActionMode = "confirm-delete"
+                        }
                     }
                 }
 
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    y: 438
+                    y: 492
                     text: "TAP AN OPTION  •  B TO CANCEL"
                     color: "#8e98aa"
                     font.family: global.fonts.sans
                     font.pixelSize: 15
                     font.letterSpacing: 1.4
+                }
+            }
+
+            Item {
+                anchors.fill: parent
+                visible: root.gameActionMode === "confirm-remove"
+
+                Text {
+                    x: 54
+                    y: 164
+                    width: parent.width - 108
+                    text: "Hide this game from " + root.homeShelfName(root.gameActionCategory) +
+                          " only? The ROM file and complete library entries will remain untouched."
+                    color: "#e9edf4"
+                    wrapMode: Text.Wrap
+                    horizontalAlignment: Text.AlignHCenter
+                    font.family: global.fonts.sans
+                    font.pixelSize: 24
+                }
+
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    y: 324
+                    spacing: 20
+                    Rectangle {
+                        width: 330; height: 82; color: "#b3121822"; border.width: 1
+                        border.color: "#52ffffff"; radius: 7
+                        Text { anchors.centerIn: parent; text: "CANCEL"; color: "white"; font.pixelSize: 23; font.bold: true }
+                        MouseArea { anchors.fill: parent; onClicked: root.gameActionMode = "menu" }
+                    }
+                    Rectangle {
+                        width: 330; height: 82; color: root.accent; radius: 7
+                        Text { anchors.centerIn: parent; text: "REMOVE FROM LIST"; color: "#05070b"; font.pixelSize: 22; font.bold: true }
+                        MouseArea { anchors.fill: parent; onClicked: root.submitRemoveFromList() }
+                    }
                 }
             }
 
@@ -5736,7 +6547,7 @@ FocusScope {
                     x: 54
                     y: 164
                     width: parent.width - 108
-                    text: "Remove this game from Lucent and move the ROM to the hidden .LucentTrash folder?"
+                    text: "Permanently delete the actual ROM/game file from device storage and remove it from Lucent? This cannot be undone."
                     color: "#e9edf4"
                     wrapMode: Text.Wrap
                     horizontalAlignment: Text.AlignHCenter
@@ -6207,53 +7018,70 @@ FocusScope {
 
             }
 
+            Text {
+                anchors.right: parent.right
+                anchors.rightMargin: 48
+                y: 44
+                text: "PAGE " + (root.settingsPage + 1) + " / " +
+                      Math.ceil(root.settingsOptionCount / root.settingsPageSize)
+                color: root.accent
+                font.family: global.fonts.sans
+                font.pixelSize: 16
+                font.weight: Font.Bold
+                font.letterSpacing: 1.2
+            }
+
             Repeater {
-                model: 11
+                // Six spacious rows per page. Up/Down crosses page boundaries
+                // automatically, so touch and controller users get one unified
+                // settings surface without compressed text or tiny targets.
+                model: root.settingsPageSize
 
                 Rectangle {
-                    property int setting: index
+                    property int setting: root.settingsPage * root.settingsPageSize + index
+                    visible: setting < root.settingsOptionCount
                     x: 44
-                    y: 126 + index * 70
+                    y: 148 + index * 118
                     width: settingsPanel.width - 88
-                    height: 62
+                    height: 106
                     color: root.settingsIndex === setting ? "#261f2a38" : "#9b111720"
                     border.width: root.settingsIndex === setting ? 2 : 1
                     border.color: root.settingsIndex === setting ? root.accent : "#30ffffff"
-                    radius: 5
+                    radius: 7
 
                     Text {
                         x: 24
-                        y: 8
+                        y: 18
                         text: root.settingTitle(parent.setting)
                         color: "white"
                         font.family: global.fonts.sans
-                        font.pixelSize: 17
+                        font.pixelSize: 19
                         font.weight: Font.Bold
-                        font.letterSpacing: 0.8
+                        font.letterSpacing: 0.9
                     }
 
                     Text {
                         x: 24
-                        y: 34
-                        width: parent.width - (parent.setting === 8 ? 420 : 300)
+                        y: 57
+                        width: parent.width - 370
                         text: root.settingDescription(parent.setting)
-                        color: "#9da7b8"
+                        color: "#a7b0c1"
                         elide: Text.ElideRight
                         font.family: global.fonts.sans
-                        font.pixelSize: 12
+                        font.pixelSize: 14
                     }
 
                     Text {
                         anchors.right: parent.right
                         anchors.rightMargin: parent.setting === 7 ? 92 : 24
                         anchors.verticalCenter: parent.verticalCenter
-                        width: parent.setting === 8 ? 330 : 250
+                        width: parent.setting === 8 ? 340 : 286
                         horizontalAlignment: Text.AlignRight
                         text: root.settingValue(parent.setting)
                         color: root.accent
                         elide: Text.ElideRight
                         font.family: global.fonts.condensed
-                        font.pixelSize: parent.setting === 8 ? 22 : 25
+                        font.pixelSize: parent.setting === 8 ? 23 : 27
                         font.weight: Font.Bold
                     }
 
@@ -6268,17 +7096,12 @@ FocusScope {
                         color: "#221f2a38"
                         border.width: 1
                         border.color: "#45ffffff"
-                        Text {
-                            anchors.centerIn: parent
-                            text: "+"
-                            color: "white"
-                            font.pixelSize: 27
-                            font.bold: true
-                        }
+                        Text { anchors.centerIn: parent; text: "+"; color: "white";
+                               font.pixelSize: 27; font.bold: true }
                         MouseArea {
                             anchors.fill: parent
                             onClicked: {
-                            root.settingsIndex = 7
+                                root.settingsIndex = 7
                                 root.setSystemLedBrightness(root.systemLedBrightness + 1)
                             }
                         }
@@ -6295,17 +7118,12 @@ FocusScope {
                         color: "#221f2a38"
                         border.width: 1
                         border.color: "#45ffffff"
-                        Text {
-                            anchors.centerIn: parent
-                            text: "−"
-                            color: "white"
-                            font.pixelSize: 27
-                            font.bold: true
-                        }
+                        Text { anchors.centerIn: parent; text: "−"; color: "white";
+                               font.pixelSize: 27; font.bold: true }
                         MouseArea {
                             anchors.fill: parent
                             onClicked: {
-                            root.settingsIndex = 7
+                                root.settingsIndex = 7
                                 root.setSystemLedBrightness(root.systemLedBrightness - 1)
                             }
                         }
@@ -6327,7 +7145,112 @@ FocusScope {
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 y: 925
-                text: "UP / DOWN  SELECT     LEFT / RIGHT  CHANGE     B  CLOSE"
+                text: "UP / DOWN  SELECT & PAGE     LEFT / RIGHT  CHANGE     B  CLOSE"
+                color: "#7f899c"
+                font.family: global.fonts.sans
+                font.pixelSize: 15
+                font.letterSpacing: 1
+            }
+        }
+    }
+
+    Rectangle {
+        id: coverOrderEditorOverlay
+        z: 815
+        anchors.fill: parent
+        visible: root.coverOrderEditorOpen
+        color: "#e905080d"
+
+        MouseArea { anchors.fill: parent }
+
+        Rectangle {
+            anchors.centerIn: parent
+            width: 820
+            height: 820
+            color: "#f20d121a"
+            border.width: 1
+            border.color: root.accent
+            radius: 8
+
+            Text {
+                x: 44; y: 34
+                text: "COVER ROW ORDER"
+                color: "white"
+                font.family: global.fonts.condensed
+                font.pixelSize: 40
+                font.weight: Font.Bold
+                font.letterSpacing: 2
+            }
+
+            Text {
+                x: 46; y: 86
+                text: "UP / DOWN SELECT  •  LEFT / RIGHT MOVE"
+                color: "#9da7b8"
+                font.family: global.fonts.sans
+                font.pixelSize: 15
+                font.letterSpacing: 1.3
+            }
+
+            Repeater {
+                model: 8
+
+                Rectangle {
+                    property int orderZone: Number(root.coverRowOrder[index])
+                    x: 42
+                    y: 126 + index * 78
+                    width: 736
+                    height: 66
+                    color: root.coverOrderEditorIndex === index ?
+                           Qt.darker(root.accent, 3.6) : "#9b111720"
+                    border.width: root.coverOrderEditorIndex === index ? 3 : 1
+                    border.color: root.coverOrderEditorIndex === index ?
+                                  root.accent : "#30ffffff"
+                    radius: 5
+
+                    Text {
+                        x: 20
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: (index < 9 ? "0" : "") + String(index + 1)
+                        color: root.accent
+                        font.family: global.fonts.condensed
+                        font.pixelSize: 23
+                        font.weight: Font.Bold
+                    }
+
+                    Text {
+                        x: 82
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: root.coverRowName(parent.orderZone)
+                        color: "white"
+                        font.family: global.fonts.sans
+                        font.pixelSize: 21
+                        font.weight: Font.Bold
+                    }
+
+                    Text {
+                        anchors.right: parent.right
+                        anchors.rightMargin: 22
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "←  MOVE  →"
+                        color: root.coverOrderEditorIndex === index ?
+                               "white" : "#778196"
+                        font.family: global.fonts.sans
+                        font.pixelSize: 16
+                        font.weight: Font.DemiBold
+                        font.letterSpacing: 1
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: root.coverOrderEditorIndex = index
+                    }
+                }
+            }
+
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                y: 770
+                text: "B  BACK TO SETTINGS"
                 color: "#7f899c"
                 font.family: global.fonts.sans
                 font.pixelSize: 15

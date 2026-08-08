@@ -7,3 +7,13 @@ android-companion/assets/pegasus-lucent-theme.zip
 *.apk
 *.idsig
 *.partial
+# Locally compiled, pinned emulator candidates. Core binaries are not committed
+# or packaged until registry approval and state/device qualification.
+engines/build/
+# Local release/staging binaries live in GitHub releases, not git history.
+dist/
+# Derived from the pinned base APK by the checksum-locked patch tools.
+/libpegasus-fe_arm64-v8a.so
+# Tool noise.
+aqtinstall.log
+*.log
