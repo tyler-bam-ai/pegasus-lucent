@@ -23,6 +23,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /** Fail-closed reader for explicitly packaged Phase 2 qualification assets. */
 public final class Phase2QualificationCatalog {
@@ -30,7 +32,11 @@ public final class Phase2QualificationCatalog {
     private static final String REGISTRY = "phase2-engine-registry.json";
     private static final String OPT_IN = "phase2-qualification-opt-in.json";
     private static final String ARTIFACTS = "phase2-engine-artifacts.json";
+    // Bounds the fail-closed wait a consumer spends on background verification.
+    private static final long BOOTSTRAP_WAIT_SECONDS = 30;
     private static volatile Map<String, Entry> cached;
+    private static volatile Thread bootstrapThread;
+    private static final CountDownLatch BOOTSTRAP_GATE = new CountDownLatch(1);
 
     static final class FirmwareFile {
         final String destination;
@@ -316,13 +322,34 @@ public final class Phase2QualificationCatalog {
 
     static void invalidate() { cached = null; }
 
+    /** Called by the bootstrap before its verification thread starts. */
+    static void expectBootstrapOn(Thread verifier) { bootstrapThread = verifier; }
+
+    /** Called by the bootstrap once verification and registration finish. */
+    static void bootstrapComplete() { BOOTSTRAP_GATE.countDown(); }
+
     private static Map<String, Entry> snapshot(Context context) {
+        // Fail closed: consumers block until the background verification (and
+        // engine registration) completes; an expired or interrupted wait yields
+        // an uncached empty catalog, never unverified entries.
+        if (!bootstrapSettled()) return Collections.<String, Entry>emptyMap();
         Map<String, Entry> result = cached;
         if (result != null) return result;
         synchronized (Phase2QualificationCatalog.class) {
             if (cached == null)
                 cached = Collections.unmodifiableMap(load(context.getApplicationContext()));
             return cached;
+        }
+    }
+
+    private static boolean bootstrapSettled() {
+        Thread verifier = bootstrapThread;
+        if (verifier == null || verifier == Thread.currentThread()) return true;
+        try {
+            return BOOTSTRAP_GATE.await(BOOTSTRAP_WAIT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
         }
     }
 
@@ -446,7 +473,8 @@ public final class Phase2QualificationCatalog {
                 .getCanonicalFile();
         File core = new File(libraryRoot, libraryName).getCanonicalFile();
         if (!core.isFile() || !libraryRoot.equals(core.getParentFile()) ||
-                !expectedHash.equals(sha256(core))) return null;
+                !expectedHash.equals(
+                        InternalEngineCatalog.verifiedSha256(context, core))) return null;
         if (!assetRoot.isEmpty()) {
             InputStream probe = context.getAssets().open(assetRoot + "/" +
                     assetProbe.substring(assetDestination.isEmpty() ? 0 :
@@ -620,10 +648,6 @@ public final class Phase2QualificationCatalog {
                 if (count > 0) output.write(buffer, 0, count);
             return new String(output.toByteArray(), StandardCharsets.US_ASCII);
         } finally { input.close(); }
-    }
-
-    private static String sha256(File file) throws Exception {
-        return digest(file, "SHA-256");
     }
 
     private static String digest(File file, String algorithm) throws Exception {

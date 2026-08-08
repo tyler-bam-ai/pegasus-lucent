@@ -7,6 +7,8 @@ import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -16,6 +18,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Release gate for in-process engines.
@@ -28,7 +32,16 @@ import java.util.Map;
  */
 public final class InternalEngineCatalog {
     private static final String ASSET = "engine-registry.json";
+    private static final String HASH_CACHE_FILE = "engine-hash-cache.json";
+    // Bounds the fail-closed wait a consumer spends on background verification.
+    private static final long BOOTSTRAP_WAIT_SECONDS = 30;
     private static volatile Snapshot cached;
+    private static volatile Thread bootstrapThread;
+    private static final CountDownLatch BOOTSTRAP_GATE = new CountDownLatch(1);
+    private static final Object HASH_CACHE_LOCK = new Object();
+    private static JSONObject hashCacheEntries;      // guarded by HASH_CACHE_LOCK
+    private static long hashCacheInstallTime;        // guarded by HASH_CACHE_LOCK
+    private static File hashCachePath;               // guarded by HASH_CACHE_LOCK
 
     public static final class Entry {
         public final String id;
@@ -106,12 +119,35 @@ public final class InternalEngineCatalog {
     /** Tests and package replacement can force the signed asset to be reread. */
     static void invalidate() { cached = null; }
 
+    /** Called by the bootstrap before its verification thread starts. */
+    static void expectBootstrapOn(Thread verifier) { bootstrapThread = verifier; }
+
+    /** Called by the bootstrap once verification and registration finish. */
+    static void bootstrapComplete() { BOOTSTRAP_GATE.countDown(); }
+
     private static Snapshot snapshot(Context context) {
+        // Fail closed: consumers block until the background verification (and
+        // engine registration) completes; an expired or interrupted wait yields
+        // an uncached empty snapshot, never unverified entries.
+        if (!bootstrapSettled())
+            return new Snapshot(new LinkedHashMap<String, Entry>(),
+                    new LinkedHashMap<String, Entry>());
         Snapshot result = cached;
         if (result != null) return result;
         synchronized (InternalEngineCatalog.class) {
             if (cached == null) cached = load(context.getApplicationContext());
             return cached;
+        }
+    }
+
+    private static boolean bootstrapSettled() {
+        Thread verifier = bootstrapThread;
+        if (verifier == null || verifier == Thread.currentThread()) return true;
+        try {
+            return BOOTSTRAP_GATE.await(BOOTSTRAP_WAIT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
         }
     }
 
@@ -220,12 +256,15 @@ public final class InternalEngineCatalog {
     }
 
     private static final class ArtifactIdentity {
+        final Context context;
         final String engineId;
         final String fileName;
         final String sha256;
         final String sourceCommit;
 
-        ArtifactIdentity(String engineId, String fileName, String sha256, String sourceCommit) {
+        ArtifactIdentity(Context context, String engineId, String fileName,
+                String sha256, String sourceCommit) {
+            this.context = context;
             this.engineId = engineId;
             this.fileName = fileName;
             this.sha256 = sha256;
@@ -235,7 +274,7 @@ public final class InternalEngineCatalog {
         boolean matches(String expectedId, JSONObject source, File core) {
             if (!engineId.equals(expectedId) || !fileName.equals(core.getName()) ||
                     source == null || !sourceCommit.equals(source.optString("commit"))) return false;
-            try { return sha256.equals(fileSha256(core)); }
+            try { return sha256.equals(verifiedSha256(context, core)); }
             catch (Exception ignored) { return false; }
         }
     }
@@ -281,7 +320,7 @@ public final class InternalEngineCatalog {
                 String commit = row.optString("sourceCommit").toLowerCase(Locale.US);
                 if (!id.isEmpty() && filename.matches("[A-Za-z0-9_.-]+\\.so") &&
                         hash.matches("[0-9a-f]{64}") && commit.matches("[0-9a-f]{40}"))
-                    result.put(id, new ArtifactIdentity(id, filename, hash, commit));
+                    result.put(id, new ArtifactIdentity(context, id, filename, hash, commit));
             }
         } catch (Exception ignored) {
             // Missing or malformed signed provenance disables internal cores.
@@ -296,6 +335,86 @@ public final class InternalEngineCatalog {
             if (value.matches("[0-9a-f]{64}") && !result.contains(value)) result.add(value);
         }
         return result;
+    }
+
+    /**
+     * Returns the SHA-256 of a packaged core, consulting a persistent cache
+     * keyed by APK install time plus file path and size. Native libraries only
+     * change with the APK, so a hit skips re-reading hundreds of megabytes on
+     * every cold start; a missing or corrupt cache re-hashes everything.
+     * Phase2QualificationCatalog shares this cache for its bundled cores.
+     */
+    static String verifiedSha256(Context context, File file) throws Exception {
+        String key = file.getAbsolutePath() + "|" + file.length();
+        synchronized (HASH_CACHE_LOCK) {
+            loadHashCacheLocked(context);
+            String cachedHash = hashCacheEntries.optString(key);
+            if (cachedHash.matches("[0-9a-f]{64}")) return cachedHash;
+        }
+        String computed = fileSha256(file);
+        synchronized (HASH_CACHE_LOCK) {
+            try {
+                hashCacheEntries.put(key, computed);
+                persistHashCacheLocked();
+            } catch (Exception ignored) {
+                // An unwritable cache only costs a re-hash next cold start.
+            }
+        }
+        return computed;
+    }
+
+    private static void loadHashCacheLocked(Context context) {
+        long installTime = apkLastUpdateTime(context);
+        if (hashCacheEntries != null && hashCacheInstallTime == installTime) return;
+        hashCachePath = new File(context.getFilesDir(), HASH_CACHE_FILE);
+        hashCacheInstallTime = installTime;
+        hashCacheEntries = new JSONObject();
+        try {
+            JSONObject root = new JSONObject(readFile(hashCachePath));
+            JSONObject hashes = root.optJSONObject("hashes");
+            // Any mismatch — including an unreadable install time — discards
+            // the cache so a replaced APK is always fully re-verified.
+            if (installTime > 0 && hashes != null &&
+                    root.optLong("apkLastUpdateTime", -1) == installTime)
+                hashCacheEntries = hashes;
+        } catch (Exception ignored) {
+            // Missing or corrupt cache: every core is re-hashed.
+        }
+    }
+
+    private static void persistHashCacheLocked() throws Exception {
+        JSONObject root = new JSONObject();
+        root.put("apkLastUpdateTime", hashCacheInstallTime);
+        root.put("hashes", hashCacheEntries);
+        byte[] bytes = root.toString().getBytes(StandardCharsets.UTF_8);
+        File temporary = new File(hashCachePath.getParentFile(),
+                HASH_CACHE_FILE + ".tmp");
+        FileOutputStream output = new FileOutputStream(temporary);
+        try {
+            output.write(bytes);
+            output.flush();
+            output.getFD().sync();
+        } finally { output.close(); }
+        if (!temporary.renameTo(hashCachePath)) temporary.delete();
+    }
+
+    private static long apkLastUpdateTime(Context context) {
+        try {
+            return context.getPackageManager()
+                    .getPackageInfo(context.getPackageName(), 0).lastUpdateTime;
+        } catch (Exception ignored) { return 0; }
+    }
+
+    private static String readFile(File file) throws Exception {
+        InputStream input = new FileInputStream(file);
+        try {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            byte[] buffer = new byte[16 * 1024];
+            int count;
+            while ((count = input.read(buffer)) >= 0)
+                if (count > 0) output.write(buffer, 0, count);
+            return new String(output.toByteArray(), StandardCharsets.UTF_8);
+        } finally { input.close(); }
     }
 
     private static String fileSha256(File file) throws Exception {

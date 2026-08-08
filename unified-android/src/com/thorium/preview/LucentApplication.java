@@ -24,6 +24,9 @@ public final class LucentApplication
     @Override
     public void onCreate() {
         super.onCreate();
+        // Engine registration hash-verifies every bundled core; register()
+        // runs that on its own background thread and catalog consumers block
+        // until it completes, so onCreate stays off the ANR path.
         InternalEngineBootstrap.register(this);
         // Theme extraction can touch thousands of external-storage files and
         // must never delay Application startup. PreviewService installs or
