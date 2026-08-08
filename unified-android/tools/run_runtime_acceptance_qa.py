@@ -47,6 +47,22 @@ ACTIVITY_START = re.compile(
     r"ActivityTaskManager.*START\s+u\d+.*com\.thorium\.preview",
     re.I,
 )
+# Any Activity START of any package, with its intent block captured, so the
+# in-process assertion can classify each new Activity rather than only counting
+# Lucent starts. `intent` is the `{...}` payload (act=/cmp=/flg=...) and `tail`
+# is the remainder of the line (uid, launch flags, and sometimes a display).
+ACTIVITY_START_INTENT = re.compile(
+    r"ActivityTaskManager:\s*START\s+u\d+\s*\{(?P<intent>[^}]*)\}(?P<tail>[^\n]*)",
+    re.I,
+)
+# Lucent's OWN dual-screen gameplay window on the physical lower display.
+SECONDARY_GAMEPLAY_ACTION = "com.thorium.preview.SECONDARY_GAMEPLAY"
+# The secondary gameplay window resuming on a NON-primary (>=1) display. This
+# corroborates that the whitelisted PreviewActivity landed on the lower panel
+# and never on display 0.
+SECONDARY_GAMEPLAY_RESUME = re.compile(
+    r"performResumeActivity com\.thorium\.preview displayId ([1-9]\d*)"
+)
 PROHIBITED_TEXT = re.compile(
     r"PREPARING|SAVING\s+AND\s+RETURNING|POWERED\s+BY\s+PEGASUS|"
     r"\bLUCENT\b|\bPEGASUS\b",
@@ -104,6 +120,52 @@ def load_matrix(path: Path) -> list[SystemCase]:
     return result
 
 
+def _intent_field(intent: str, key: str) -> str:
+    match = re.search(rf"(?:^|\s){re.escape(key)}=(\S+)", intent)
+    return match.group(1) if match else ""
+
+
+def is_secondary_gameplay_start(match: "re.Match[str]") -> bool:
+    """True only for Lucent's OWN PreviewActivity opened with the
+    SECONDARY_GAMEPLAY action, and never one pinned to the primary display.
+    This is the single second Activity that dual-screen gameplay is allowed to
+    open on the physical lower panel; everything else is a one-app violation."""
+    intent = match.group("intent")
+    tail = match.group("tail") or ""
+    if _intent_field(intent, "act") != SECONDARY_GAMEPLAY_ACTION:
+        return False
+    component = _intent_field(intent, "cmp")
+    package, _, clazz = component.partition("/")
+    if package != "com.thorium.preview" or "PreviewActivity" not in clazz:
+        return False
+    # The secondary gameplay window must never land on display 0.
+    if re.search(r"displayId=?0\b", intent + " " + tail):
+        return False
+    return True
+
+
+def classify_new_activity_starts(
+        routed_log: str, baseline_log: str,
+        case: SystemCase) -> tuple[int, list[str]]:
+    """Split the Activity starts that appeared after the physical-A launch into
+    (permitted Lucent secondary-gameplay starts, violating starts).
+
+    Only dual-screen systems may open exactly one Lucent PreviewActivity with the
+    SECONDARY_GAMEPLAY action on a non-primary display. Any other new Activity,
+    any Activity on display 0, any MainActivity relaunch, and any non-Lucent
+    package is a violation for every system."""
+    baseline = len(ACTIVITY_START_INTENT.findall(baseline_log))
+    matches = list(ACTIVITY_START_INTENT.finditer(routed_log))
+    secondary = 0
+    violations: list[str] = []
+    for match in matches[baseline:]:
+        if case.dual_screen and is_secondary_gameplay_start(match):
+            secondary += 1
+        else:
+            violations.append(match.group(0))
+    return secondary, violations
+
+
 def embedded_theme(apk: Path) -> tuple[bytes, bytes, list[str]]:
     with zipfile.ZipFile(apk) as archive:
         payload = archive.read("assets/pegasus-lucent-theme.zip")
@@ -126,6 +188,27 @@ def embedded_theme(apk: Path) -> tuple[bytes, bytes, list[str]]:
     if not order or order[0] != "all":
         raise RuntimeError("cannot derive system order from exact bundled theme")
     return qml, cfg, order
+
+
+def catalog_display_names(apk: Path) -> dict[str, str]:
+    """Map each catalog folder to the normalized on-screen system name.
+
+    The List view renders the highlighted system as a large header (e.g.
+    "GAME BOY ADVANCE"), which is the catalog ``name`` field, not the ``folder``
+    id ("gba"). This map is what lets the List view smoke resolve an OCR'd
+    header back to a canonical folder without assuming the Cover view order.
+    """
+    qml, _cfg, _order = embedded_theme(apk)
+    text = qml.decode("utf-8")
+    catalog = text.split("id: systemCatalog", 1)[1].split(
+        "// Predecode official platform logotypes", 1)[0]
+    names: dict[str, str] = {}
+    for element in re.findall(r"ListElement\s*\{[^{}]*\}", catalog, re.S):
+        name_match = re.search(r'name:\s*"([^"]*)"', element)
+        folder_match = re.search(r'folder:\s*"([^"]+)"', element)
+        if name_match and folder_match:
+            names[normalize(folder_match.group(1))] = normalize(name_match.group(1))
+    return names
 
 
 def verify_frozen_menu(apk: Path) -> list[str]:
@@ -445,6 +528,34 @@ def selected_header_ocr(path: Path) -> str:
     )
     values = [" ".join(ocr_region(path, box, 6).split()) for box in boxes]
     return " | ".join(value for value in values if value)
+
+
+def resolve_list_folder(observed: str,
+                        display_names: dict[str, str]) -> Optional[str]:
+    """Resolve an OCR'd List view header to a catalog folder.
+
+    Returns the folder whose normalized display name is the *longest* one
+    contained in the observed header text, so shorter families never shadow a
+    longer one (e.g. "GAME BOY" -> gb must not swallow "GAME BOY ADVANCE" ->
+    gba). Returns None when nothing resolves, which the caller treats as an
+    unreadable frame rather than a match.
+    """
+    normalized = normalize(observed)
+    if not normalized:
+        return None
+    best: Optional[str] = None
+    best_len = 0
+    for folder, name in display_names.items():
+        if name and name in normalized and len(name) > best_len:
+            best = folder
+            best_len = len(name)
+    return best
+
+
+def list_view_highlighted_folder(path: Path,
+                                 display_names: dict[str, str]) -> Optional[str]:
+    """OCR the List view header and map it back to a canonical catalog folder."""
+    return resolve_list_folder(selected_header_ocr(path), display_names)
 
 
 def sort_tab_scores(path: Path) -> list[float]:
@@ -1017,7 +1128,28 @@ def run_game_from_system_menu(adb: Path, serial: str,
             "QtActivityDelegate.createSurface"
         ) - qt_surface_baseline,
     }
-    if lifecycle_delta["activityStart"] != 0:
+    secondary_starts, foreign_starts = classify_new_activity_starts(
+        routed_log, launch_log, case
+    )
+    if foreign_starts:
+        raise RuntimeError("menu A launch started an Activity instead of staying in-process")
+    if case.dual_screen:
+        # A dual-screen launch stays in-process on display 0 (the top screen)
+        # and opens exactly one of Lucent's OWN PreviewActivity windows on the
+        # physical lower panel (act=SECONDARY_GAMEPLAY, resumed on a non-primary
+        # display). Any other new Activity, any activity on display 0, and any
+        # non-Lucent package already landed in foreign_starts above.
+        if secondary_starts != 1:
+            raise RuntimeError(
+                "dual-screen launch did not open exactly one Lucent secondary "
+                f"gameplay window on the physical lower display (saw {secondary_starts})"
+            )
+        if SECONDARY_GAMEPLAY_RESUME.search(routed_log) is None:
+            raise RuntimeError(
+                "dual-screen secondary gameplay window never resumed on the "
+                "physical lower display"
+            )
+    elif lifecycle_delta["activityStart"] != 0:
         raise RuntimeError("menu A launch started an Activity instead of staying in-process")
     if lifecycle_delta["performResume"] != 0:
         raise RuntimeError("menu A launch resumed MainActivity instead of using the live window")
@@ -1117,25 +1249,64 @@ def run_system(adb: Path, serial: str, controller: PhysicalController,
 
 def run_list_view_smoke(adb: Path, serial: str,
                         controller: PhysicalController, case: SystemCase,
-                        visible_order: list[str], output: Path) -> dict[str, object]:
+                        visible_order: list[str], display_names: dict[str, str],
+                        output: Path) -> dict[str, object]:
+    # The List view's left system column does NOT share the Cover view's
+    # origin/order (visibleSystemOrder): the aggregate "all" entry is absent and
+    # the column stays scrolled to the previously-selected system. Counting UP
+    # then DOWN by Cover-view indices therefore lands on the wrong system (a run
+    # targeting n64 launched gba/mgba). Instead navigate in the List view's own
+    # space by OCR'ing the highlighted system after every move.
+    #
+    # 25 ms pulses are documented as loseable on the Thor (handover QA lessons);
+    # a dropped press leaves the cursor short of its target. Use the proven
+    # >=40 ms duration the rest of this harness uses.
     controller.stick("down")
-    # 25 ms pulses are documented as loseable on the Thor (handover QA
-    # lessons); a dropped UP leaves the cursor short of the top and every
-    # subsequent DOWN lands on the wrong system. Use the proven >=40 ms
-    # duration the rest of this harness uses.
-    for _ in range(len(visible_order) + 3):
+    bound = len(visible_order) + 3
+
+    # Press UP until the highlighted system stops changing (the true top of the
+    # left column), tolerating unreadable frames without treating them as the
+    # top.
+    top_frame = output / f"list-view-{case.folder}-top.png"
+    settled = None
+    for _ in range(bound):
+        screenshot(adb, serial, top_frame)
+        observed = list_view_highlighted_folder(top_frame, display_names)
+        if observed is not None and observed == settled:
+            break
+        settled = observed
         controller.key(controller.UP, "dpad-up-list-system", hold=0.045)
-    for _ in range(visible_order.index(case.folder)):
-        controller.key(controller.DOWN, "dpad-down-list-system", hold=0.045)
+
+    # Press DOWN until the highlighted system's canonical folder == case.folder.
     list_frame = output / f"list-view-{case.folder}.png"
-    screenshot(adb, serial, list_frame)
+    reached = False
+    observed = None
+    for _ in range(bound):
+        screenshot(adb, serial, list_frame)
+        observed = list_view_highlighted_folder(list_frame, display_names)
+        if observed == case.folder:
+            reached = True
+            break
+        controller.key(controller.DOWN, "dpad-down-list-system", hold=0.045)
+    if not reached:
+        screenshot(adb, serial, list_frame)
+        observed = list_view_highlighted_folder(list_frame, display_names)
+        reached = observed == case.folder
+    if not reached:
+        raise RuntimeError(
+            f"list view never highlighted {case.folder}; last resolved system "
+            f"was {observed!r} (bounded by {bound} moves)"
+        )
+
     controller.key(controller.A, "physical-a-lock-list-system", hold=0.055)
     time.sleep(0.25)
     result = run_game_from_system_menu(
         adb, serial, controller, case, output, f"list-view-{case.folder}-title-01"
     )
     return {"status": "PASS", "system": case.folder,
-            "listEntryPhysical": True, "game": result}
+            "listEntryPhysical": True,
+            "listHighlightResolved": observed,
+            "game": result}
 
 
 def persist(path: Path, report: dict) -> None:
@@ -1305,6 +1476,7 @@ def main() -> int:
 
     visible_order = visible_system_order(apk, index)
     report["visibleSystemOrder"] = visible_order
+    display_names = catalog_display_names(apk)
     matrix = load_matrix(args.matrix)
     selected = {normalize(value) for value in (args.system or [])}
     if args.system:
@@ -1361,7 +1533,8 @@ def main() -> int:
     if not args.skip_list_view_smoke and cases and report["counts"]["FAIL"] == 0:
         try:
             report["listViewSmoke"] = run_list_view_smoke(
-                args.adb, args.serial, controller, cases[0], visible_order, output
+                args.adb, args.serial, controller, cases[0], visible_order,
+                display_names, output
             )
         except Exception as error:
             report["listViewSmoke"] = {"status": "FAIL", "reason": str(error)}

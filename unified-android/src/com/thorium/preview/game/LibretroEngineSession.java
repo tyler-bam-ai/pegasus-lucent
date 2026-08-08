@@ -108,6 +108,7 @@ public final class LibretroEngineSession implements EngineSession,
     private long framePeriodNs = FRAME_NS;
     private int lastVideoSequence = -1;
     private boolean frameEvidenceLogged;
+    private boolean lowerDrawEvidenceLogged;
     private Bitmap frameBitmap;
     private int[] frameColors;
     // Written on the lifecycle thread during prepare and read on the frame
@@ -269,12 +270,21 @@ public final class LibretroEngineSession implements EngineSession,
         secondarySurface = next;
         secondarySurfaceWidth = width;
         secondarySurfaceHeight = height;
+        Log.i(TAG, "LucentLowerScreen secondary surface available engine=" + entry.id +
+                " system=" + (request == null ? "?" : request.systemId) +
+                " valid=" + (next != null && next.isValid()) +
+                " size=" + width + "x" + height +
+                " secondaryGameplayRequested=" + secondaryGameplayRequested);
     }
 
     @Override public void onSecondarySurfaceDestroyed() {
+        Log.i(TAG, "LucentLowerScreen secondary surface destroyed engine=" + entry.id +
+                " system=" + (request == null ? "?" : request.systemId) +
+                " secondaryGameplayRequested=" + secondaryGameplayRequested);
         secondarySurface = null;
         secondarySurfaceWidth = 0;
         secondarySurfaceHeight = 0;
+        lowerDrawEvidenceLogged = false;
     }
 
     @Override public void onSecondaryTouch(
@@ -916,8 +926,35 @@ public final class LibretroEngineSession implements EngineSession,
         }
         boolean presented = drawFrame(target, surfaceWidth, surfaceHeight, primarySource);
         Surface lower = secondarySurface;
-        if (secondarySource != null && lower != null && lower.isValid())
-            drawFrame(lower, secondarySurfaceWidth, secondarySurfaceHeight, secondarySource);
+        if (secondarySource != null && lower != null && lower.isValid()) {
+            boolean lowerPresented = drawFrame(
+                    lower, secondarySurfaceWidth, secondarySurfaceHeight, secondarySource);
+            if (!lowerDrawEvidenceLogged) {
+                lowerDrawEvidenceLogged = true;
+                Log.i(TAG, "LucentLowerScreen bottom crop drawn engine=" + entry.id +
+                        " system=" + request.systemId +
+                        " secondarySurfaceNotNull=" + true +
+                        " isValid=" + lower.isValid() +
+                        " secondarySurfaceSize=" + secondarySurfaceWidth + "x" +
+                        secondarySurfaceHeight +
+                        " crop=" + secondarySource.width() + "x" + secondarySource.height() +
+                        " drawFrameReturned=" + lowerPresented);
+            }
+        } else if (dualScreen && !lowerDrawEvidenceLogged) {
+            lowerDrawEvidenceLogged = true;
+            String reason = secondarySource == null ? "secondarySource-null(frameHeightNotEvenPair)"
+                    : lower == null ? "secondarySurface-null(never-attached)"
+                    : "secondarySurface-invalid";
+            Log.i(TAG, "LucentLowerScreen bottom crop SKIPPED engine=" + entry.id +
+                    " system=" + request.systemId +
+                    " reason=" + reason +
+                    " secondarySurfaceNotNull=" + (lower != null) +
+                    " isValid=" + (lower != null && lower.isValid()) +
+                    " secondarySurfaceSize=" + secondarySurfaceWidth + "x" +
+                    secondarySurfaceHeight +
+                    " frameSize=" + frame.width + "x" + frame.height +
+                    " secondaryGameplayRequested=" + secondaryGameplayRequested);
+        }
         if (presented && !frameEvidenceLogged) {
             int nonblack = 0;
             for (int color : frameColors) if ((color & 0x00ffffff) != 0) ++nonblack;

@@ -76,6 +76,50 @@ class RuntimeAcceptanceQaTest(unittest.TestCase):
                              ["all", "nes", "n64"])
         self.assertGreater(len(matrix), 0)
 
+    def test_catalog_display_names_map_folder_to_on_screen_name(self):
+        qml = b'''ListModel { id: systemCatalog
+          ListElement { name: "ALL"; collectionName: ""; folder: "all" }
+          ListElement { name: "GAME BOY"; collectionName: "GB"; folder: "gb" }
+          ListElement { name: "GAME BOY COLOR"; collectionName: "GBC"; folder: "gbc" }
+          ListElement { name: "GAME BOY ADVANCE"; collectionName: "GBA"; folder: "gba" }
+        }
+        // Predecode official platform logotypes'''
+        nested = io.BytesIO()
+        with zipfile.ZipFile(nested, "w") as theme:
+            theme.writestr("theme.qml", qml)
+            theme.writestr("theme.cfg", b"name: test")
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        apk = Path(temporary.name) / "test.apk"
+        with zipfile.ZipFile(apk, "w") as archive:
+            archive.writestr("assets/pegasus-lucent-theme.zip", nested.getvalue())
+        self.assertEqual(MODULE.catalog_display_names(apk), {
+            "all": "all",
+            "gb": "gameboy",
+            "gbc": "gameboycolor",
+            "gba": "gameboyadvance",
+        })
+
+    def test_resolve_list_folder_prefers_longest_display_name(self):
+        names = {
+            "gb": "gameboy",
+            "gbc": "gameboycolor",
+            "gba": "gameboyadvance",
+            "n64": "nintendo64",
+        }
+        # The longest contained display name wins so "GAME BOY" never shadows
+        # "GAME BOY ADVANCE".
+        self.assertEqual(
+            MODULE.resolve_list_folder("GAME BOY ADVANCE", names), "gba")
+        self.assertEqual(MODULE.resolve_list_folder("GAME BOY", names), "gb")
+        self.assertEqual(
+            MODULE.resolve_list_folder("GAME BOY COLOR", names), "gbc")
+        self.assertEqual(
+            MODULE.resolve_list_folder("NINTENDO 64", names), "n64")
+        # Unreadable / unknown headers do not resolve to any folder.
+        self.assertIsNone(MODULE.resolve_list_folder("", names))
+        self.assertIsNone(MODULE.resolve_list_folder("PLAYSTATION", names))
+
     def test_controller_axis_parser_accepts_thor_z_rz_pair(self):
         value = '''
           ABS_Z                : value 0, min -32768, max 32767, fuzz 0, flat 4096
@@ -140,6 +184,99 @@ class RuntimeAcceptanceQaTest(unittest.TestCase):
             draw.rounded_rectangle((left, 350, left + 142, 394), 7, fill=fill)
         image.save(path)
         self.assertEqual(MODULE.active_sort_index(path), 2)
+
+    def _dual_case(self):
+        return MODULE.SystemCase(
+            "nds", ("nds", "ds"), ("melonds-ds",), 1,
+            dual_screen=True, lower_touch=True,
+            required_titles=("Cobalt Demo",),
+        )
+
+    def _single_case(self):
+        return MODULE.SystemCase("nes", ("nes",), ("mesen",), 1)
+
+    def _start_line(self, intent, tail=""):
+        return ("01-01 00:00:00.000  1234  1234 I ActivityTaskManager: "
+                f"START u0 {{{intent}}}{tail}")
+
+    def test_dual_screen_secondary_gameplay_activity_is_whitelisted(self):
+        # Lucent's OWN PreviewActivity on the physical lower display, with the
+        # SECONDARY_GAMEPLAY action, is the single permitted second Activity.
+        secondary = self._start_line(
+            "act=com.thorium.preview.SECONDARY_GAMEPLAY "
+            "cmp=com.thorium.preview/.PreviewActivity",
+            " from uid 10123",
+        )
+        routed = "\n".join([
+            "In-window route accepted engine=melonds-ds system=nds",
+            secondary,
+            "performResumeActivity com.thorium.preview displayId 4",
+        ])
+        count, violations = MODULE.classify_new_activity_starts(
+            routed, "", self._dual_case())
+        self.assertEqual(count, 1)
+        self.assertEqual(violations, [])
+        # Corroborated by a resume on a non-primary display.
+        self.assertIsNotNone(MODULE.SECONDARY_GAMEPLAY_RESUME.search(routed))
+
+    def test_dual_screen_rejects_foreign_package_activity(self):
+        routed = "\n".join([
+            self._start_line(
+                "act=android.intent.action.MAIN "
+                "cmp=org.melonds.emulator/.EmulatorActivity"),
+        ])
+        count, violations = MODULE.classify_new_activity_starts(
+            routed, "", self._dual_case())
+        self.assertEqual(count, 0)
+        self.assertEqual(len(violations), 1)
+
+    def test_dual_screen_rejects_display_zero_and_main_activity(self):
+        # A MainActivity relaunch (top-screen / display 0) is never whitelisted.
+        main_relaunch = self._start_line(
+            "act=android.intent.action.MAIN "
+            "cmp=com.thorium.preview/org.pegasus_frontend.android.MainActivity")
+        _count, violations = MODULE.classify_new_activity_starts(
+            main_relaunch, "", self._dual_case())
+        self.assertEqual(len(violations), 1)
+        # Even a SECONDARY_GAMEPLAY-labelled start pinned to display 0 is rejected.
+        pinned = self._start_line(
+            "act=com.thorium.preview.SECONDARY_GAMEPLAY "
+            "cmp=com.thorium.preview/.PreviewActivity",
+            " from uid 10123 on displayId=0")
+        count, violations = MODULE.classify_new_activity_starts(
+            pinned, "", self._dual_case())
+        self.assertEqual(count, 0)
+        self.assertEqual(len(violations), 1)
+
+    def test_single_screen_never_whitelists_a_second_activity(self):
+        secondary = self._start_line(
+            "act=com.thorium.preview.SECONDARY_GAMEPLAY "
+            "cmp=com.thorium.preview/.PreviewActivity")
+        count, violations = MODULE.classify_new_activity_starts(
+            secondary, "", self._single_case())
+        self.assertEqual(count, 0)
+        self.assertEqual(len(violations), 1)
+
+    def test_baseline_activity_starts_are_not_counted_as_new(self):
+        secondary = self._start_line(
+            "act=com.thorium.preview.SECONDARY_GAMEPLAY "
+            "cmp=com.thorium.preview/.PreviewActivity")
+        # The same start already present in the pre-launch baseline snapshot is
+        # not treated as a new launch.
+        count, violations = MODULE.classify_new_activity_starts(
+            secondary, secondary, self._dual_case())
+        self.assertEqual(count, 0)
+        self.assertEqual(violations, [])
+
+    def test_in_process_assertions_include_dual_screen_whitelist(self):
+        source = (TOOLS / "run_runtime_acceptance_qa.py").read_text(encoding="utf-8")
+        self.assertIn("classify_new_activity_starts", source)
+        self.assertIn(
+            "dual-screen secondary gameplay window never resumed", source)
+        self.assertIn("SECONDARY_GAMEPLAY_RESUME", source)
+        self.assertIn(
+            "menu A launch started an Activity instead of staying in-process",
+            source)
 
     def test_stop_gate_is_five_hundred_milliseconds_and_background_save(self):
         source = (TOOLS / "run_runtime_acceptance_qa.py").read_text(encoding="utf-8")

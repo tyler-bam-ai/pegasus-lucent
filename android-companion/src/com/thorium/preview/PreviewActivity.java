@@ -536,6 +536,8 @@ public final class PreviewActivity extends Activity {
         launchButton.setVisibility(View.GONE);
         blackout.setVisibility(View.GONE);
         gameplayGeneration = generation;
+        Log.i("LucentPreview", "showGameplaySurface generation=" + generation +
+                " displayId=" + (getDisplay() == null ? -1 : getDisplay().getDisplayId()));
         gameplaySurface = new SurfaceView(this);
         gameplaySurface.setBackgroundColor(Color.BLACK);
         gameplaySurface.setZOrderMediaOverlay(true);
@@ -543,6 +545,9 @@ public final class PreviewActivity extends Activity {
         gameplaySurface.setFocusableInTouchMode(false);
         gameplaySurface.getHolder().addCallback(new SurfaceHolder.Callback() {
             @Override public void surfaceCreated(SurfaceHolder holder) {
+                Log.i("LucentPreview", "gameplay surfaceCreated generation=" + gameplayGeneration +
+                        " size=" + gameplaySurface.getWidth() + "x" + gameplaySurface.getHeight() +
+                        " valid=" + holder.getSurface().isValid() + " -> surfaceAvailable");
                 SecondaryGameplaySurfaceRouter.surfaceAvailable(gameplayGeneration,
                         holder.getSurface(), gameplaySurface.getWidth(),
                         gameplaySurface.getHeight());
@@ -550,6 +555,9 @@ public final class PreviewActivity extends Activity {
 
             @Override public void surfaceChanged(
                     SurfaceHolder holder, int format, int width, int height) {
+                Log.i("LucentPreview", "gameplay surfaceChanged generation=" + gameplayGeneration +
+                        " size=" + width + "x" + height +
+                        " valid=" + holder.getSurface().isValid() + " -> surfaceAvailable");
                 SecondaryGameplaySurfaceRouter.surfaceAvailable(gameplayGeneration,
                         holder.getSurface(), width, height);
             }
@@ -557,6 +565,7 @@ public final class PreviewActivity extends Activity {
             @Override public void surfaceDestroyed(SurfaceHolder holder) {
                 // Synchronous and bounded: the Surface dies when this
                 // callback returns, so the engine must detach first.
+                Log.i("LucentPreview", "gameplay surfaceDestroyed generation=" + gameplayGeneration);
                 SecondaryGameplaySurfaceRouter.surfaceDestroyed(gameplayGeneration);
             }
         });

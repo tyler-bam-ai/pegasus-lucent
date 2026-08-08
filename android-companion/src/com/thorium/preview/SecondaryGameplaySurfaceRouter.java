@@ -30,8 +30,19 @@ public final class SecondaryGameplaySurfaceRouter {
 
     public static synchronized boolean request(
             Context context, String systemId, Listener next) {
-        if (context == null || next == null || !supports(systemId) ||
-                BootReceiver.secondaryDisplayId(context) < 0) return false;
+        int secondaryDisplay = context == null ? -1 : BootReceiver.secondaryDisplayId(context);
+        boolean overlays = context != null && Settings.canDrawOverlays(context);
+        if (context == null || next == null || !supports(systemId) || secondaryDisplay < 0) {
+            Log.i(TAG, "request rejected returned=false system=" + systemId +
+                    " supports=" + supports(systemId) +
+                    " secondaryDisplayId=" + secondaryDisplay +
+                    " canDrawOverlays=" + overlays);
+            return false;
+        }
+        Log.i(TAG, "request accepted system=" + systemId +
+                " secondaryDisplayId=" + secondaryDisplay +
+                " path=" + (overlays ? "startActivity(canDrawOverlays)" : "PendingIntent") +
+                " (SDK=" + Build.VERSION.SDK_INT + ")");
         listener = next;
         long requestedGeneration = ++generation;
         Intent activity = new Intent(context, PreviewActivity.class)
@@ -58,6 +69,9 @@ public final class SecondaryGameplaySurfaceRouter {
                         options.toBundle());
                 pending.send(context, 0, null, null, null, null, options.toBundle());
             }
+            Log.i(TAG, "request launched secondary gameplay activity returned=true system=" +
+                    systemId + " generation=" + requestedGeneration +
+                    " displayId=" + secondaryDisplay);
             return true;
         } catch (PendingIntent.CanceledException | RuntimeException failure) {
             if (listener == next && generation == requestedGeneration) listener = null;
@@ -80,14 +94,22 @@ public final class SecondaryGameplaySurfaceRouter {
 
     static synchronized void surfaceAvailable(
             long candidate, Surface surface, int width, int height) {
-        if (listener != null && generation == candidate)
+        boolean matched = listener != null && generation == candidate;
+        Log.i(TAG, "surfaceAvailable candidate=" + candidate + " generation=" + generation +
+                " match=" + matched + " listener=" + (listener != null) +
+                " valid=" + (surface != null && surface.isValid()) +
+                " size=" + width + "x" + height);
+        if (matched)
             listener.onSecondarySurfaceAvailable(surface, width, height);
     }
 
     /** Synchronous: returns only after the listener detached from the dying
      * Surface (bounded), so callers may remove the view right after. */
     static synchronized void surfaceDestroyed(long candidate) {
-        if (listener != null && generation == candidate)
+        boolean matched = listener != null && generation == candidate;
+        Log.i(TAG, "surfaceDestroyed candidate=" + candidate + " generation=" + generation +
+                " match=" + matched + " listener=" + (listener != null));
+        if (matched)
             listener.onSecondarySurfaceDestroyed();
     }
 
