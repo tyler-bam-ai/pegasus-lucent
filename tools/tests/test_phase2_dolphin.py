@@ -185,6 +185,22 @@ class DolphinCompilerProofTests(unittest.TestCase):
         self.assertIn("Dolphin submitted incomplete frames after navigation", harness)
         self.assertIn('if visible_burst_frames != 16:', harness)
 
+    def test_dolphin_runs_single_core_to_avoid_the_frame_pump_deadlock(self):
+        # Dolphin's dual-core libretro pump calls Core::DoFrameStep() before
+        # FifoManager::RunGpuLoop() on the same thread. Its Running branch
+        # enters CPUManager::SetStepping(true), which blocks until the separate
+        # CPU thread idles, while that CPU thread can only idle once this
+        # thread drains the FIFO. Both threads then sleep forever, which is the
+        # observed GameCube/Wii freeze. Single core keeps emulation on the one
+        # render thread, so no cross-thread handoff can deadlock.
+        host = LIBRETRO_HOST.read_text(encoding="utf-8")
+        self.assertIn('strcmp(variable->key, "dolphin_main_cpu_thread") == 0', host)
+        profile = host.split('"dolphin_main_cpu_thread"', 1)[1].split(
+            "} else if", 1
+        )[0]
+        self.assertIn('options, "disabled", &value_size', profile)
+        self.assertNotIn('options, "enabled", &value_size', profile)
+
     def test_dolphin_shader_profile_uses_the_actual_synchronous_token(self):
         host = LIBRETRO_HOST.read_text(encoding="utf-8")
         profile = host.split('"dolphin_shader_compilation_mode"', 1)[1].split(

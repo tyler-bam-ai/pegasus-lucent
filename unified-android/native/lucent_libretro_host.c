@@ -436,6 +436,28 @@ static bool register_core_variable_defaults(
              * frontend FBO unwritten on the maintained libretro core. */
             const char *profile = find_option_token(options, "2", &value_size);
             if (profile) options = profile;
+        } else if (strcmp(variable->key, "dolphin_main_cpu_thread") == 0) {
+            /* Dolphin's dual-core libretro frame pump deadlocks in-process.
+             * Each retro_run does Core::DoFrameStep() and only then enters
+             * FifoManager::RunGpuLoop() on this thread. Whenever the emulated
+             * CPU produced no new field during the previous call, DoFrameStep
+             * takes its Running branch and calls Core::SetState(Paused) ->
+             * CPUManager::SetStepping(true), which blocks on
+             * m_state_cpu_idle_cvar until the separate CPU thread goes idle.
+             * That CPU thread reaches its idle point only after the GPU thread
+             * drains the FIFO or answers a blocking AsyncRequests event, and
+             * the GPU thread is this thread, still parked inside SetStepping.
+             * Dolphin documents the hazard itself in CPUManager::Break():
+             * "We'll deadlock if we synchronize, the CPU may block waiting for
+             * our caller to finish."  Both threads then sleep forever with no
+             * further core output, which is the GameCube/Wii freeze.
+             * Single-core keeps emulation on this one render thread:
+             * retro_run runs CPUManager::RunSingleFrame() directly, and
+             * GetInitializedVideoGuard puts AsyncRequests in passthrough, so
+             * no cross-thread handoff exists to deadlock on. */
+            const char *profile = find_option_token(
+                    options, "disabled", &value_size);
+            if (profile) options = profile;
         } else if (strcmp(variable->key,
                           "dolphin_shader_compilation_mode") == 0) {
             /* Lucent owns one EGL context. Do not select an asynchronous mode
