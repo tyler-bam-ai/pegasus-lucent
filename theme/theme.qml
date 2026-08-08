@@ -59,7 +59,10 @@ FocusScope {
     // Xbox/Microsoft, Atari, and so on).  It is more precise than the generic
     // word "company" and remains useful when many studios published games for
     // the same console.
-    property string accentGrouping: "family" // family, system
+    // "wallpaper" resolves each game's accent from the complementary color the
+    // importer already derived from its wallpaper and stored in metadata. It
+    // is never computed here: browsing must cost no image work.
+    property string accentGrouping: "system" // family, system, wallpaper
     property var customFamilyAccents: ({})
     property var customSystemAccents: ({})
     property bool accentEditorOpen: false
@@ -232,7 +235,18 @@ FocusScope {
             return homeShelfGame(homeZone)
         return homePreviewGame
     }
-    property color accent: systemModel.get(displaySystemIndex).accent
+    // The single resolved accent for the current selection. The Thor stick
+    // LEDs are driven from this exact value, so they match the UI precisely in
+    // every grouping mode, including the per-game wallpaper accents.
+    property color accent: {
+        // While the system column owns focus the chrome still belongs to the
+        // collection, not to whichever game happens to supply its preview.
+        if (accentGrouping === "wallpaper" && !showSystemBackdrop) {
+            var wallpaperAccent = storedWallpaperAccent(activeGame)
+            if (wallpaperAccent !== "") return wallpaperAccent
+        }
+        return systemModel.get(displaySystemIndex).accent
+    }
     onAccentChanged: {
         if (systemLedEnabled) systemLedCommit.restart()
     }
@@ -413,10 +427,36 @@ FocusScope {
         return hslHex(hue, 0.82, 0.59)
     }
 
+    // The system palette is also the fallback layer for "by wallpaper", so
+    // per-system hues stay in force for games whose wallpaper yielded nothing.
+    function baseAccentGrouping() {
+        return accentGrouping === "family" ? "family" : "system"
+    }
+
+    function normalizedAccentGrouping(value) {
+        if (value === "family") return "family"
+        if (value === "wallpaper") return "wallpaper"
+        return "system"
+    }
+
+    function accentGroupingOptions() {
+        return ["family", "system", "wallpaper"]
+    }
+
+    // Precomputed by the Lucent importer as x-lucent-accent. Reading a stored
+    // string keeps game selection free of any color analysis.
+    function storedWallpaperAccent(game) {
+        if (!game || !game.extra) return ""
+        var stored = game.extra["lucent-accent"]
+        if (stored === undefined || stored === null) return ""
+        var text = String(stored).trim().toLowerCase()
+        return /^#[0-9a-f]{6}$/.test(text) ? text : ""
+    }
+
     function resolvedAccentForSystem(index) {
         if (index <= 0) return "#dce4f2"
         var system = systemModel.get(index)
-        if (accentGrouping === "system") {
+        if (baseAccentGrouping() === "system") {
             var systemKey = String(system.folder)
             return customSystemAccents[systemKey] || defaultSystemAccent(index)
         }
@@ -431,17 +471,24 @@ FocusScope {
     }
 
     function setAccentGrouping(value) {
-        accentGrouping = value === "system" ? "system" : "family"
+        accentGrouping = normalizedAccentGrouping(value)
         api.memory.set("lucentAccentGrouping", accentGrouping)
         accentEditorTargetIndex = 0
         applyAccentPalette()
+    }
+
+    function cycleAccentGrouping(direction) {
+        var options = accentGroupingOptions()
+        var current = Math.max(0, options.indexOf(accentGrouping))
+        var step = direction < 0 ? -1 : 1
+        setAccentGrouping(options[(current + step + options.length) % options.length])
     }
 
     function accentTargets() {
         var targets = []
         var seen = ({})
         for (var index = 1; index < systemModel.count; ++index) {
-            var value = accentGrouping === "system" ?
+            var value = baseAccentGrouping() === "system" ?
                     String(systemModel.get(index).folder) :
                     String(systemModel.get(index).family || "open")
             if (seen[value]) continue
@@ -452,7 +499,7 @@ FocusScope {
     }
 
     function accentTargetLabel(key) {
-        if (accentGrouping === "family") {
+        if (baseAccentGrouping() === "family") {
             for (var index = 1; index < systemModel.count; ++index) {
                 if (String(systemModel.get(index).family || "open") === key)
                     return brandNameForSystem(index)
@@ -477,9 +524,9 @@ FocusScope {
         accentEditorTargetIndex = Math.max(0,
                 Math.min(targets.length - 1, accentEditorTargetIndex))
         var key = targets[accentEditorTargetIndex]
-        var saved = accentGrouping === "system" ?
+        var saved = baseAccentGrouping() === "system" ?
                 customSystemAccents[key] : customFamilyAccents[key]
-        var rawColor = saved || (accentGrouping === "system" ?
+        var rawColor = saved || (baseAccentGrouping() === "system" ?
                 resolvedAccentForSystem(accentEditorTargetIndex + 1) :
                 defaultFamilyAccent(key))
         var color = Qt.tint(rawColor, "#00000000")
@@ -502,7 +549,7 @@ FocusScope {
         var hex = "#" + colorByteHex(accentEditorColor().r) +
                 colorByteHex(accentEditorColor().g) +
                 colorByteHex(accentEditorColor().b)
-        if (accentGrouping === "system") {
+        if (baseAccentGrouping() === "system") {
             var systemCopy = JSON.parse(JSON.stringify(customSystemAccents))
             systemCopy[key] = hex
             customSystemAccents = systemCopy
@@ -540,7 +587,7 @@ FocusScope {
         var targets = accentTargets()
         if (targets.length === 0) return
         var key = targets[accentEditorTargetIndex]
-        if (accentGrouping === "system") {
+        if (baseAccentGrouping() === "system") {
             var systemCopy = JSON.parse(JSON.stringify(customSystemAccents))
             delete systemCopy[key]
             customSystemAccents = systemCopy
@@ -1027,6 +1074,12 @@ FocusScope {
     }
 
     function accentForGame(game) {
+        if (accentGrouping === "wallpaper") {
+            var wallpaperAccent = storedWallpaperAccent(game)
+            // A game with no wallpaper, or one whose wallpaper had no usable
+            // hue, keeps its system accent instead of an invented color.
+            if (wallpaperAccent !== "") return wallpaperAccent
+        }
         var index = systemIndexForGame(game)
         return index >= 0 ? systemModel.get(index).accent : root.accent
     }
@@ -1765,6 +1818,9 @@ FocusScope {
     }
 
     function selectedLedColor() {
+        // Exactly the resolved accent the chrome is drawn with - family,
+        // system, or the game's precomputed wallpaper complement - so the
+        // sticks are never an approximation of what is on screen.
         return colorByteHex(accent.r) + colorByteHex(accent.g) + colorByteHex(accent.b)
     }
 
@@ -1982,7 +2038,7 @@ FocusScope {
             "Automatic detects the screen count; choose PIP or Off manually",
             "Sound follows the visible preview; preloaded neighbors stay silent",
             "Optional refractive blur and wallpaper distortion for controls",
-            "Group accents by platform family or give every system its own hue",
+            "By platform family, per system, or each game's wallpaper complement",
             "Choose any hue, saturation, and lightness for each active group",
             "Instantly matches the accent of the highlighted system",
             "Manual hardware level from 1–100%; defaults to a subtle 2%",
@@ -2003,7 +2059,8 @@ FocusScope {
         if (index === 1) return previewPlacementLabel()
         if (index === 2) return previewSoundEnabled ? "ON" : "OFF"
         if (index === 3) return liquidGlassEnabled ? "ON" : "OFF"
-        if (index === 4) return accentGrouping === "system" ? "BY SYSTEM" : "BY PLATFORM FAMILY"
+        if (index === 4) return accentGrouping === "system" ? "BY SYSTEM" :
+                (accentGrouping === "wallpaper" ? "BY WALLPAPER" : "BY PLATFORM FAMILY")
         if (index === 5) return "EDIT"
         if (index === 6) return systemLedEnabled ? "ON" : "OFF"
         if (index === 7) return systemLedBrightness + "%"
@@ -2033,7 +2090,7 @@ FocusScope {
             liquidGlassEnabled = !liquidGlassEnabled
             api.memory.set("thoriumLiquidGlassEnabled", liquidGlassEnabled)
         } else if (settingsIndex === 4) {
-            setAccentGrouping(accentGrouping === "family" ? "system" : "family")
+            cycleAccentGrouping(direction === 0 ? 1 : direction)
         } else if (settingsIndex === 5) {
             openAccentEditor()
         } else if (settingsIndex === 6) {
@@ -2809,7 +2866,8 @@ FocusScope {
         viewTransitionsEnabled = api.memory.has("lucentViewTransitions") ?
                 Boolean(api.memory.get("lucentViewTransitions")) : false
         accentGrouping = api.memory.has("lucentAccentGrouping") ?
-                String(api.memory.get("lucentAccentGrouping")) : "family"
+                normalizedAccentGrouping(String(api.memory.get("lucentAccentGrouping"))) :
+                "system"
         try {
             customFamilyAccents = api.memory.has("lucentCustomFamilyAccents") ?
                     JSON.parse(String(api.memory.get("lucentCustomFamilyAccents"))) : ({})
@@ -7288,9 +7346,11 @@ FocusScope {
             }
             Text {
                 x: 50; y: 88
-                text: root.accentGrouping === "system" ?
-                      "Each installed system keeps its own color" :
-                      "Systems share the color assigned to their platform family"
+                text: root.accentGrouping === "wallpaper" ?
+                      "Games use their wallpaper complement; edit the system fallback" :
+                      (root.accentGrouping === "system" ?
+                       "Each installed system keeps its own color" :
+                       "Systems share the color assigned to their platform family")
                 color: "#9da7b8"
                 font.family: global.fonts.sans
                 font.pixelSize: 17

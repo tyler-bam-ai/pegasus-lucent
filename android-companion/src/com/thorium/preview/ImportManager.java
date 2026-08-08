@@ -10,6 +10,8 @@ import android.os.Environment;
 import android.os.SystemClock;
 import android.util.Log;
 
+import com.thorium.lucent.metadata.WallpaperAccent;
+
 import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry;
 import org.apache.commons.compress.archivers.sevenz.SevenZFile;
 import org.apache.commons.compress.archivers.sevenz.SevenZFileOptions;
@@ -952,6 +954,68 @@ final class ImportManager {
     }
 
     private void enrichBackground(ImportedGame game, File cacheRoot, File mediaRoot) {
+        resolveBackground(game, cacheRoot, mediaRoot);
+        // Derive the accent here, while the importer already owns the file, so
+        // the theme can select a game with zero image work. An empty value is
+        // durable state too: it records "evaluated, no usable hue" and lets the
+        // theme fall back to the system accent without ever retrying.
+        game.accentSource = accentSourceKey(game.background);
+        game.accent = wallpaperAccent(game.background);
+    }
+
+    /**
+     * Identity of the wallpaper an accent was derived from. Including size and
+     * modified time means a wallpaper replaced at the same path re-derives,
+     * while an untouched library never decodes anything twice.
+     */
+    private static String accentSourceKey(String wallpaperPath) {
+        if (wallpaperPath == null || wallpaperPath.isEmpty()) return "";
+        File wallpaper = new File(wallpaperPath);
+        if (!wallpaper.isFile()) return wallpaperPath;
+        return wallpaperPath + ':' + wallpaper.length() + ':' + wallpaper.lastModified();
+    }
+
+    /**
+     * Deterministic complementary accent for one wallpaper file, or an empty
+     * string when the image is missing, unreadable, or carries no usable hue.
+     */
+    private static String wallpaperAccent(String wallpaperPath) {
+        if (wallpaperPath == null || wallpaperPath.isEmpty()) return "";
+        File wallpaper = new File(wallpaperPath);
+        if (!wallpaper.isFile() || wallpaper.length() <= 512) return "";
+        Bitmap sample = null;
+        try {
+            BitmapFactory.Options bounds = new BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(wallpaper.getAbsolutePath(), bounds);
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return "";
+            // Power-of-two subsampling is exact and identical on every decoder
+            // version, so a rescan cannot produce a different accent for an
+            // unchanged file. WallpaperAccent strides the rest of the way down.
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            options.inSampleSize = 1;
+            int longest = Math.max(bounds.outWidth, bounds.outHeight);
+            while (longest / (options.inSampleSize * 2) >= WallpaperAccent.SAMPLE_EDGE)
+                options.inSampleSize *= 2;
+            sample = BitmapFactory.decodeFile(wallpaper.getAbsolutePath(), options);
+            if (sample == null) return "";
+            int width = sample.getWidth();
+            int height = sample.getHeight();
+            if (width <= 0 || height <= 0) return "";
+            int[] pixels = new int[width * height];
+            sample.getPixels(pixels, 0, width, 0, 0, width, height);
+            String accent = WallpaperAccent.fromPixels(pixels, width, height);
+            return accent == null ? "" : accent;
+        } catch (Throwable error) {
+            Log.w(TAG, "Unable to derive a wallpaper accent for " + wallpaperPath, error);
+            return "";
+        } finally {
+            if (sample != null) sample.recycle();
+        }
+    }
+
+    private void resolveBackground(ImportedGame game, File cacheRoot, File mediaRoot) {
         try {
             File pipelineFolder = new File(mediaRoot, "game-wallpapers/" + game.system.folder);
             String digestPrefix = sha1(game.rom.getAbsolutePath());
@@ -1893,6 +1957,7 @@ final class ImportManager {
                         updated = removeField(updated, "assets.background");
                         updated = removeField(updated, "x-background-source");
                         updated = removeField(updated, "x-background-source-url");
+                        updated = removeField(updated, WallpaperAccent.METADATA_FIELD);
                         updated = removeField(updated, "x-background-transform").trim() +
                                 "\nassets.background: " + game.background +
                                 "\nx-background-source: " + game.backgroundSource;
@@ -1900,6 +1965,10 @@ final class ImportManager {
                             updated += "\nx-background-source-url: " + game.backgroundSourceUrl;
                         if (!game.backgroundTransform.isEmpty())
                             updated += "\nx-background-transform: " + game.backgroundTransform;
+                        // Hand-authored collections are repaired in place, so
+                        // the accent has to travel with the new wallpaper.
+                        if (!game.accent.isEmpty())
+                            updated += "\n" + WallpaperAccent.METADATA_FIELD + ": " + game.accent;
                         repaired++;
                     }
                     if (needsVideo && !missingMediaFile(game.video)) {
@@ -2257,6 +2326,7 @@ final class ImportManager {
         // path before rendering. The ROM path is deliberately the only join
         // key: similarly named regional releases must never borrow metadata.
         boolean registryChanged = hydrateRegistryFromExistingMetadata(registry);
+        registryChanged |= refreshWallpaperAccents(registry);
         for (int i = 0; i < registry.length(); i++) {
             JSONObject row = registry.optJSONObject(i);
             if (row == null || row.optLong("addedAt", 0L) > 0L) continue;
@@ -2404,6 +2474,13 @@ final class ImportManager {
                 if (!row.optString("backgroundTransform").isEmpty())
                     out.append("x-background-transform: ")
                             .append(metadataSafe(row.optString("backgroundTransform"))).append('\n');
+                // Precomputed "by wallpaper" accent. The theme reads it as
+                // game.extra["lucent-accent"] and never derives a color itself.
+                String accent = WallpaperAccent.sanitize(
+                        row.optString(WallpaperAccent.REGISTRY_FIELD));
+                if (!accent.isEmpty())
+                    out.append(WallpaperAccent.METADATA_FIELD).append(": ")
+                            .append(accent).append('\n');
                 if (!row.optString("video").isEmpty())
                     out.append("assets.video: ").append(metadataSafe(row.optString("video"))).append('\n');
             }
@@ -2430,6 +2507,37 @@ final class ImportManager {
         writeTextAtomic(LUCENT_AUTO_METADATA, retired);
         writeCompatibilityMirror(AUTO_METADATA, retired);
         writeTextAtomic(LEGACY_AUTO_METADATA, retired);
+    }
+
+    /**
+     * Precompute the "by wallpaper" accent for every registry row whose
+     * wallpaper has not been evaluated yet.
+     *
+     * The accent is keyed by the wallpaper path it was derived from, so a
+     * library update decodes an image exactly once: later scans, renames, and
+     * deletions all fall straight through. Selecting a game in the theme must
+     * never cost image work, so nothing here is deferred to browse time.
+     */
+    private static boolean refreshWallpaperAccents(JSONArray registry) {
+        boolean changed = false;
+        for (int index = 0; index < registry.length(); index++) {
+            JSONObject row = registry.optJSONObject(index);
+            if (row == null) continue;
+            String background = row.optString("background");
+            String key = accentSourceKey(background);
+            // The recorded source, not the accent, is the "already evaluated"
+            // marker: a greyscale wallpaper legitimately resolves to nothing
+            // and must not be decoded again on every later scan.
+            if (row.has(WallpaperAccent.REGISTRY_SOURCE_FIELD) &&
+                    key.equals(row.optString(WallpaperAccent.REGISTRY_SOURCE_FIELD)))
+                continue;
+            try {
+                row.put(WallpaperAccent.REGISTRY_FIELD, wallpaperAccent(background));
+                row.put(WallpaperAccent.REGISTRY_SOURCE_FIELD, key);
+                changed = true;
+            } catch (Exception ignored) {}
+        }
+        return changed;
     }
 
     private static boolean hydrateRegistryFromExistingMetadata(JSONArray registry) {
@@ -2485,6 +2593,13 @@ final class ImportManager {
                     row.put("backgroundSourceUrl", field(stanza, "x-background-source-url"));
                     row.put("backgroundTransform", field(stanza, "x-background-transform"));
                     row.put("video", field(stanza, "assets.video"));
+                    String recoveredAccent = WallpaperAccent.sanitize(
+                            field(stanza, WallpaperAccent.METADATA_FIELD));
+                    if (!recoveredAccent.isEmpty()) {
+                        row.put(WallpaperAccent.REGISTRY_FIELD, recoveredAccent);
+                        row.put(WallpaperAccent.REGISTRY_SOURCE_FIELD,
+                                accentSourceKey(field(stanza, "assets.background")));
+                    }
                     row.put("enrichmentVersion", 2);
                     row.put("archived", false);
                     row.put("forceInclude", false);
@@ -2527,6 +2642,17 @@ final class ImportManager {
                 putStringIfMissing(row, "backgroundSourceUrl", field(stanza, "x-background-source-url"));
                 putStringIfMissing(row, "backgroundTransform", field(stanza, "x-background-transform"));
                 putStringIfMissing(row, "video", field(stanza, "assets.video"));
+                // Recover a previously derived accent instead of decoding the
+                // wallpaper again after a registry loss. Recording the source
+                // alongside it keeps the refresh pass a no-op.
+                String storedAccent = WallpaperAccent.sanitize(
+                        field(stanza, WallpaperAccent.METADATA_FIELD));
+                if (!storedAccent.isEmpty() &&
+                        row.optString(WallpaperAccent.REGISTRY_FIELD).isEmpty()) {
+                    row.put(WallpaperAccent.REGISTRY_FIELD, storedAccent);
+                    row.put(WallpaperAccent.REGISTRY_SOURCE_FIELD,
+                            accentSourceKey(row.optString("background")));
+                }
                 if (ensureBackgroundProvenance(row)) addedRows = true;
             } catch (Exception ignored) {}
         }
@@ -2936,6 +3062,9 @@ final class ImportManager {
         String backgroundSource = "";
         String backgroundSourceUrl = "";
         String backgroundTransform = "";
+        // Precomputed complementary accent and the wallpaper it came from.
+        String accent = "";
+        String accentSource = "";
         String video = "";
         String release = "";
         String metacriticSlug = "";
@@ -2984,6 +3113,9 @@ final class ImportManager {
             game.backgroundSource = value.optString("backgroundSource");
             game.backgroundSourceUrl = value.optString("backgroundSourceUrl");
             game.backgroundTransform = value.optString("backgroundTransform");
+            game.accent = WallpaperAccent.sanitize(
+                    value.optString(WallpaperAccent.REGISTRY_FIELD));
+            game.accentSource = value.optString(WallpaperAccent.REGISTRY_SOURCE_FIELD);
             game.inferBackgroundProvenance();
             game.video = value.optString("video");
             game.release = value.optString("release");
@@ -3030,6 +3162,8 @@ final class ImportManager {
                 value.put("backgroundSource", backgroundSource);
                 value.put("backgroundSourceUrl", backgroundSourceUrl);
                 value.put("backgroundTransform", backgroundTransform);
+                value.put(WallpaperAccent.REGISTRY_FIELD, accent);
+                value.put(WallpaperAccent.REGISTRY_SOURCE_FIELD, accentSource);
                 value.put("video", video);
                 value.put("user", user); value.put("critic", critic);
                 value.put("metacriticUser", metacriticUser);

@@ -36,7 +36,7 @@ import verify_menu_route_closure as route_closure
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = "com.thorium.preview"
 MAIN_ACTIVITY = "com.thorium.preview/org.pegasus_frontend.android.MainActivity"
-FROZEN_THEME_QML = "8578d2c16f750913c2af0edc7bc81f9bd7885a6a9222b178821a2ca8a365538a"
+FROZEN_THEME_QML = "83cf832b9d037daf2be0d0e57d70f96e4df3b286a0a6041f40ee13ee37ec956d"
 FROZEN_THEME_CFG = "555b32df5f07153d34e0e40addd3d70068768cb684aaccf1793e5f7a75f4350b"
 ROUTE = re.compile(r"In-window route accepted engine=([^ ]+) system=([^\s]+)")
 RETURN = re.compile(

@@ -24,7 +24,7 @@ jobs:
         run: python3 -m unittest discover -s tools/tests
       - name: Frozen theme hashes
         run: |
-          printf '8578d2c16f750913c2af0edc7bc81f9bd7885a6a9222b178821a2ca8a365538a  theme/theme.qml\n555b32df5f07153d34e0e40addd3d70068768cb684aaccf1793e5f7a75f4350b  theme/theme.cfg\n' | shasum -a 256 -c -
+          printf '83cf832b9d037daf2be0d0e57d70f96e4df3b286a0a6041f40ee13ee37ec956d  theme/theme.qml\n555b32df5f07153d34e0e40addd3d70068768cb684aaccf1793e5f7a75f4350b  theme/theme.cfg\n' | shasum -a 256 -c -
 
   java-unit-tests:
     runs-on: ubuntu-latest

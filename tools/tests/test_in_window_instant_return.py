@@ -25,7 +25,7 @@ class InWindowInstantReturnTest(unittest.TestCase):
     def test_theme_is_frozen_while_runtime_return_is_changed(self):
         self.assertEqual(
             hashlib.sha256(THEME.read_bytes()).hexdigest(),
-            "8578d2c16f750913c2af0edc7bc81f9bd7885a6a9222b178821a2ca8a365538a",
+            "83cf832b9d037daf2be0d0e57d70f96e4df3b286a0a6041f40ee13ee37ec956d",
         )
 
     def test_no_preparing_or_saving_interstitial_is_visible(self):

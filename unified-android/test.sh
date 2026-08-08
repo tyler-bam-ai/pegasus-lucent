@@ -35,4 +35,6 @@ SOURCES=$(find "$PROJECT_DIR/src/com/thorium/lucent/state" \
 "$JAVA_HOME/bin/java" -cp "$TEST_BUILD" \
     com.thorium.lucent.metadata.EngineSystemIdResolverTest
 "$JAVA_HOME/bin/java" -cp "$TEST_BUILD" \
+    com.thorium.lucent.metadata.WallpaperAccentTest
+"$JAVA_HOME/bin/java" -cp "$TEST_BUILD" \
     com.thorium.lucent.video.DualScreenLayoutTest
