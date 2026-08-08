@@ -1,0 +1,231 @@
+diff --git a/Source/PS2VM.h b/Source/PS2VM.h
+index 330ac8bf..446e44c3 100644
+--- a/Source/PS2VM.h
++++ b/Source/PS2VM.h
+@@ -1,5 +1,7 @@
+ #pragma once
+ 
++#include <atomic>
++#include <memory>
+ #include <thread>
+ #include <future>
+ #include "filesystem_def.h"
+@@ -73,6 +75,11 @@ public:
+ 	std::future<bool> SaveState(const fs::path&);
+ 	std::future<bool> LoadState(const fs::path&);
+ 
++	void SaveVmTimingStateForLibretro(Framework::CZipArchiveWriter& archive) { SaveVmTimingState(archive); }
++	void LoadVmTimingStateForLibretro(Framework::CZipArchiveReader& archive) { LoadVmTimingState(archive); }
++	using LibretroPauseToken = std::shared_ptr<std::atomic<int>>;
++	LibretroPauseToken PauseAsyncForLibretroState();
++
+ 	CPU_UTILISATION_INFO GetCpuUtilisationInfo() const;
+ 
+ #ifdef DEBUGGER_INCLUDED
+diff --git a/Source/PS2VM.cpp b/Source/PS2VM.cpp
+index d9c219de..16e45c49 100644
+--- a/Source/PS2VM.cpp
++++ b/Source/PS2VM.cpp
+@@ -310,6 +310,32 @@ void CPS2VM::PauseAsync()
+ 	});
+ }
+ 
++CPS2VM::LibretroPauseToken CPS2VM::PauseAsyncForLibretroState()
++{
++	auto token = std::make_shared<std::atomic<int>>(0);
++	if(m_nStatus == PAUSED)
++	{
++		token->store(2, std::memory_order_release);
++		return token;
++	}
++	m_mailBox.SendCall([this, token]() {
++		int expected = 0;
++		if(!token->compare_exchange_strong(expected, 1, std::memory_order_acq_rel)) return;
++		if(token->load(std::memory_order_acquire) != 1) return;
++		PauseImpl();
++		OnMachineStateChange();
++		OnRunningStateChange();
++		expected = 1;
++		if(token->compare_exchange_strong(expected, 2, std::memory_order_acq_rel)) return;
++		// The bounded caller withdrew a request after this callback claimed it.
++		// Undo a pause that won the narrow cancellation race before returning.
++		ResumeImpl();
++		OnRunningStateChange();
++		token->store(3, std::memory_order_release);
++	});
++	return token;
++}
++
+ void CPS2VM::Reset(uint32 eeRamSize, uint32 iopRamSize)
+ {
+ 	assert(m_nStatus == PAUSED);
+diff --git a/Source/gs/GSHandler.h b/Source/gs/GSHandler.h
+index 174b54f7..dd7d1540 100644
+--- a/Source/gs/GSHandler.h
++++ b/Source/gs/GSHandler.h
+@@ -901,6 +901,7 @@ public:
+ 	void SendGSCall(const CMailBox::FunctionType&, bool = false, bool = false);
+ 
+ 	void ProcessSingleFrame();
++	void DrainPendingCallsForState();
+ 
+ 	FlipCompleteEvent OnFlipComplete;
+ 	NewFrameEvent OnNewFrame;
+diff --git a/Source/gs/GSHandler.cpp b/Source/gs/GSHandler.cpp
+index 135424db..ced8ee16 100644
+--- a/Source/gs/GSHandler.cpp
++++ b/Source/gs/GSHandler.cpp
+@@ -2211,6 +2211,17 @@ void CGSHandler::ProcessSingleFrame()
+ 	m_flipped = false;
+ }
+ 
++void CGSHandler::DrainPendingCallsForState()
++{
++	// State operations run on the non-threaded GS owner. Never call
++	// ProcessSingleFrame here: it waits for a future flip and deadlocks if
++	// the VM pause reaches its mailbox before queuing one. Only drain work
++	// that already exists, then consume any flip marker produced while the
++	// VM was being stopped.
++	while(m_mailBox.IsPending()) m_mailBox.ReceiveCall();
++	m_flipped = false;
++}
++
+ Framework::CBitmap CGSHandler::GetScreenshot()
+ {
+ 	throw std::runtime_error("Screenshot feature is not implemented in current backend.");
+diff --git a/Source/ui_libretro/main_libretro.cpp b/Source/ui_libretro/main_libretro.cpp
+index 5e9b375b..3b6ec431 100644
+--- a/Source/ui_libretro/main_libretro.cpp
++++ b/Source/ui_libretro/main_libretro.cpp
+@@ -16,6 +16,9 @@
+ 
+ #include <vector>
+ #include <cstdlib>
++#include <cstring>
++#include <thread>
++#include <chrono>
+ 
+ #if defined(__ANDROID__)
+ #include "android/JavaVM.h"
+@@ -260,6 +263,50 @@ unsigned retro_get_region(void)
+ 	return RETRO_REGION_NTSC;
+ }
+ 
++enum STATE_PAUSE_RESULT
++{
++	STATE_PAUSE_FAILED = -1,
++	STATE_PAUSE_ALREADY_PAUSED = 0,
++	STATE_PAUSE_OWNED = 1,
++};
++
++static int pause_vm_for_state()
++{
++	if(!m_virtualMachine) return STATE_PAUSE_FAILED;
++	if(m_virtualMachine->GetStatus() != CVirtualMachine::RUNNING)
++		return m_virtualMachine->GetStatus() == CVirtualMachine::PAUSED ?
++		    STATE_PAUSE_ALREADY_PAUSED : STATE_PAUSE_FAILED;
++	auto token = m_virtualMachine->PauseAsyncForLibretroState();
++	auto gsHandler = static_cast<CGSH_OpenGL_Libretro*>(m_virtualMachine->GetGSHandler());
++	auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
++	while(std::chrono::steady_clock::now() < deadline)
++	{
++		if(token->load(std::memory_order_acquire) == 2 &&
++		   m_virtualMachine->GetStatus() == CVirtualMachine::PAUSED)
++			return STATE_PAUSE_OWNED;
++		// The libretro GS executes on this thread. Drain only pending work;
++		// ProcessSingleFrame blocks waiting for a future flip and Release()
++		// destroys the live GL renderer.
++		if(gsHandler) gsHandler->DrainPendingCallsForState();
++		std::this_thread::sleep_for(std::chrono::milliseconds(1));
++	}
++	int expected = 0;
++	if(token->compare_exchange_strong(expected, 3, std::memory_order_acq_rel))
++		return STATE_PAUSE_FAILED;
++	expected = 1;
++	if(token->compare_exchange_strong(expected, 4, std::memory_order_acq_rel))
++		return STATE_PAUSE_FAILED;
++	if(token->load(std::memory_order_acquire) == 2 &&
++	   m_virtualMachine->GetStatus() == CVirtualMachine::PAUSED)
++		return STATE_PAUSE_OWNED;
++	return STATE_PAUSE_FAILED;
++}
++
++static void resume_vm_after_state(int pauseResult)
++{
++	if(pauseResult == STATE_PAUSE_OWNED && m_virtualMachine) m_virtualMachine->Resume();
++}
++
+ size_t retro_serialize_size(void)
+ {
+ 	CLog::GetInstance().Print(LOG_NAME, "%s\n", __FUNCTION__);
+@@ -270,26 +317,32 @@ size_t retro_serialize_size(void)
+ bool retro_serialize(void* data, size_t size)
+ {
+ 	CLog::GetInstance().Print(LOG_NAME, "%s\n", __FUNCTION__);
++	const int pauseResult = pause_vm_for_state();
++	if(pauseResult == STATE_PAUSE_FAILED) return false;
++	bool success = false;
+ 
+ 	try
+ 	{
+ 		Framework::CMemStream stateStream;
+ 		Framework::CZipArchiveWriter archive;
+ 
+ 		m_virtualMachine->m_ee->SaveState(archive);
+ 		m_virtualMachine->m_iop->SaveState(archive);
+ 		m_virtualMachine->m_ee->m_gs->SaveState(archive);
++		m_virtualMachine->SaveVmTimingStateForLibretro(archive);
+ 
+ 		archive.Write(stateStream);
+-		stateStream.Seek(0, Framework::STREAM_SEEK_DIRECTION::STREAM_SEEK_SET);
+-		stateStream.Read(data, size);
++		if(stateStream.GetSize() > size) throw std::runtime_error("state buffer too small");
++		std::memset(data, 0, size);
++		std::memcpy(data, stateStream.GetBuffer(), stateStream.GetSize());
++		success = true;
+ 	}
+ 	catch(...)
+ 	{
+-		return false;
+ 	}
+ 
+-	return true;
++	resume_vm_after_state(pauseResult);
++	return success;
+ }
+ 
+ bool retro_unserialize(const void* data, size_t size)
+@@ -296,6 +349,9 @@ bool retro_unserialize(const void* data, size_t size)
+ {
+ 	CLog::GetInstance().Print(LOG_NAME, "%s\n", __FUNCTION__);
+ 
++	const int pauseResult = pause_vm_for_state();
++	if(pauseResult == STATE_PAUSE_FAILED) return false;
++	bool success = false;
+ 	try
+ 	{
+ 		Framework::CPtrStream stateStream(data, size);
+@@ -306,6 +362,8 @@ bool retro_unserialize(const void* data, size_t size)
+ 			m_virtualMachine->m_ee->LoadState(archive);
+ 			m_virtualMachine->m_iop->LoadState(archive);
+ 			m_virtualMachine->m_ee->m_gs->LoadState(archive);
++			m_virtualMachine->LoadVmTimingStateForLibretro(archive);
++			success = true;
+ 		}
+ 		catch(...)
+ 		{
+@@ -316,11 +374,11 @@ bool retro_unserialize(const void* data, size_t size)
+ 	}
+ 	catch(...)
+ 	{
+-		return false;
+ 	}
+ 
+-	m_virtualMachine->OnMachineStateChange();
+-	return true;
++	if(success) m_virtualMachine->OnMachineStateChange();
++	resume_vm_after_state(pauseResult);
++	return success;
+ }
+ 
+ void* retro_get_memory_data(unsigned id)

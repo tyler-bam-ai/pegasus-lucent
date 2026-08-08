@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "coreArtifactSha256": "562db09fef04f1fe4460e99938e58b3435dd2d3b6b03e25660786f6d47e20d2f",
+  "linkedObjectCount": 227,
+  "policy": "This records the exact configuration-specific object closure. It does not close the release license gate because embedded WHDLoad/data provenance and the AROS source-to-ROM chain remain unresolved.",
+  "components": [
+    {"id":"puae-core","objectPrefix":"build/sources","objectCount":146,"spdx":"GPL-2.0-or-later","evidencePath":"COPYING","evidenceSha256":"dcc100d4161cc0b7177545ab6e47216f84857cda3843847c792a25289852dcaa"},
+    {"id":"puae-libretro","objectPrefix":"build/libretro","objectCount":6,"spdx":"GPL-2.0-or-later","evidencePath":"COPYING","evidenceSha256":"dcc100d4161cc0b7177545ab6e47216f84857cda3843847c792a25289852dcaa"},
+    {"id":"libchdr","objectPrefix":"build/deps/libchdr","objectCount":5,"spdx":"BSD-3-Clause","evidencePath":"deps/libchdr/LICENSE.txt","evidenceSha256":"e3989a7aee74a91b8cdbdfe204a6b8d03288863ec7533a21c51f1a987ba73539"},
+    {"id":"libmpeg2","objectPrefix":"build/deps/libmpeg2","objectCount":9,"spdx":"GPL-2.0-or-later","evidencePath":"deps/libmpeg2/COPYING","evidenceSha256":"32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670"},
+    {"id":"zstd","objectPrefix":"build/deps/zstd","objectCount":9,"spdx":"BSD-3-Clause OR GPL-2.0-only","evidencePath":"deps/zstd/LICENSE","evidenceSha256":"7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8"},
+    {"id":"zlib-1.2.7","objectPrefix":"build/deps/libz","objectCount":14,"spdx":"Zlib","evidencePath":"deps/libz/zlib.h","evidenceSha256":"31b7ed2b5bceea407626bdbcf16a1efa9770e91b646012906ac8303aa3f1f242"},
+    {"id":"7zip-lzma-sdk","objectPrefix":"build/deps/7zip","objectCount":17,"spdx":"LicenseRef-Public-Domain-7zip-LZMA-SDK","evidencePath":"deps/7zip/7zTypes.h","evidenceSha256":"f624da37b9d8e70cc829b6c650009b74dd335f792e63c41fb2cd8e4dd288f09f"},
+    {"id":"libretro-common","objectPrefix":"build/libretro-common","objectCount":12,"spdx":"MIT AND LicenseRef-Public-Domain-libco","evidencePath":"libretro-common/compat/compat_strl.c","evidenceSha256":"48d190961f5a9f427890b511fd139d17d711e85f785e0f7b2bbea78de38d863a"},
+    {"id":"puae-retrodep-data","objectPrefix":"build/retrodep","objectCount":9,"spdx":"NOASSERTION","evidencePath":"retrodep/WHDLoad_files.zip.c","evidenceSha256":"1b6400714d8e6b0b837c1bff81ba05d24f919d4f8ac2c661a42415eae5696044"}
+  ],
+  "unresolved": [
+    "File-level rights and notices for embedded WHDLoad support/data payloads",
+    "Exact source-to-binary provenance for the embedded AROS ROM image",
+    "Full copyright inventory for the copied PUAE/WinUAE source closure"
+  ]
+}

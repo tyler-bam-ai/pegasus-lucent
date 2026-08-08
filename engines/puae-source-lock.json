@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-08-07",
+  "buildProfile": "android-arm64-libretro-software-interpreter",
+  "closureScope": "exact-pinned-source-with-configuration-specific-vendored-object-inventory",
+  "sourceDateEpoch": 1786118400,
+  "core": {
+    "repository": "https://github.com/libretro/libretro-uae",
+    "commit": "96ebfcfc2c66233ad37f6dc99ee991211dc719ad",
+    "archive": "https://github.com/libretro/libretro-uae/archive/96ebfcfc2c66233ad37f6dc99ee991211dc719ad.tar.gz",
+    "archiveSha256": "af671aa1b42eb5b97a05b3ac2e57b6f397f3e17bbd0be7ac204636c2321d3cf0",
+    "licenseDeclared": "GPL-2.0-or-later"
+  },
+  "toolchain": {
+    "androidAbi": "arm64-v8a",
+    "androidApi": 23,
+    "ndkVersion": "27.0.12077973",
+    "ndkSourcePropertiesSha256": "1c4a54b31c5ed242a901b4a472d412819b5e08405df1c58066bd555f9dd52515"
+  },
+  "dependencies": [],
+  "embeddedComponents": [
+    {"id":"puae-core","path":"sources","licenseDeclared":"GPL-2.0-or-later","evidenceSha256":"dcc100d4161cc0b7177545ab6e47216f84857cda3843847c792a25289852dcaa"},
+    {"id":"libchdr","path":"deps/libchdr","licenseDeclared":"BSD-3-Clause","evidenceSha256":"e3989a7aee74a91b8cdbdfe204a6b8d03288863ec7533a21c51f1a987ba73539"},
+    {"id":"libmpeg2","path":"deps/libmpeg2","licenseDeclared":"GPL-2.0-or-later","evidenceSha256":"32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670"},
+    {"id":"zstd","path":"deps/zstd","licenseDeclared":"BSD-3-Clause OR GPL-2.0-only","evidenceSha256":"7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8"},
+    {"id":"zlib-1.2.7","path":"deps/libz","licenseDeclared":"Zlib","evidenceSha256":"31b7ed2b5bceea407626bdbcf16a1efa9770e91b646012906ac8303aa3f1f242"},
+    {"id":"7zip-lzma-sdk","path":"deps/7zip","licenseDeclared":"LicenseRef-Public-Domain-7zip-LZMA-SDK","evidenceSha256":"f624da37b9d8e70cc829b6c650009b74dd335f792e63c41fb2cd8e4dd288f09f"},
+    {"id":"libretro-common","path":"libretro-common","licenseDeclared":"MIT AND LicenseRef-Public-Domain-libco","evidenceSha256":"48d190961f5a9f427890b511fd139d17d711e85f785e0f7b2bbea78de38d863a"},
+    {"id":"puae-retrodep-data","path":"retrodep","licenseDeclared":"NOASSERTION","evidenceSha256":"1b6400714d8e6b0b837c1bff81ba05d24f919d4f8ac2c661a42415eae5696044"}
+  ],
+  "dependencyAudit": {
+    "path": "engines/puae-dependency-audit.json",
+    "sha256": "6cfb8358f100637c3acb97a1b67fc0d8fe65b54fba235c4d02388d6a3205638a",
+    "complete": false
+  },
+  "firmwarePolicy": {
+    "path": "engines/puae-firmware-policy.json",
+    "sha256": "b906bc0a91065e1f98f665418f7a2413285c492beae42f4333557e4dc0958609"
+  },
+  "notices": {
+    "path": "engines/PUAE-CORE-NOTICES.txt",
+    "sha256": "c600aa8778fa7740dba86d2510d6468bc687fb6c6beeee5a3b5b4b593321a00b"
+  },
+  "legalTestContent": {
+    "path": "engines/puae-test-content-lock.json",
+    "sha256": "13570b612dc8546308a4a01fc1b5e03654647ceae11809f1b474837d507bdcfa"
+  },
+  "artifact": {
+    "path": "engines/build/arm64-v8a/puae_libretro.so",
+    "size": 23464192,
+    "sha256": "562db09fef04f1fe4460e99938e58b3435dd2d3b6b03e25660786f6d47e20d2f",
+    "firstCleanBuildSha256": "562db09fef04f1fe4460e99938e58b3435dd2d3b6b03e25660786f6d47e20d2f",
+    "secondCleanBuildSha256": "562db09fef04f1fe4460e99938e58b3435dd2d3b6b03e25660786f6d47e20d2f",
+    "embeddedArosCompressedMatches": 1,
+    "reproducible": true
+  },
+  "releaseGates": {
+    "dependencies": false,
+    "firmware": false,
+    "legalContentRuntime": false,
+    "renderer": false,
+    "state": false,
+    "performance": false,
+    "device": false
+  }
+}

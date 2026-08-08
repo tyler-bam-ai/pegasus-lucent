@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-08-07",
+  "buildProfile": "android-arm64-libretro-lite-gles2-no-launcher",
+  "closureScope": "exact-source-and-two-upstream-libretro-dependency-archives",
+  "sourceDateEpoch": 1786097197,
+  "toolchain": {
+    "androidAbi": "arm64-v8a",
+    "androidApi": 21,
+    "ndkVersion": "27.0.12077973",
+    "ndkSourcePropertiesSha256": "1c4a54b31c5ed242a901b4a472d412819b5e08405df1c58066bd555f9dd52515"
+  },
+  "core": {
+    "repository": "https://github.com/scummvm/scummvm",
+    "commit": "6aa8fa9b6f9e5a7ae670cc355af1b727ff75c995",
+    "archive": "https://github.com/scummvm/scummvm/archive/6aa8fa9b6f9e5a7ae670cc355af1b727ff75c995.tar.gz",
+    "archiveSha256": "8e2080a442b4e78c045795714ac4b699023f631e2045fb133d496cd29419fa67",
+    "licenseDeclared": "GPL-3.0-or-later"
+  },
+  "dependencies": [
+    {
+      "path": "backends/platform/libretro/deps/libretro-deps",
+      "repository": "https://github.com/libretro/libretro-deps",
+      "commit": "7e6e34f0319f4c7448d72f0e949e76265ccf55a1",
+      "archive": "https://codeload.github.com/libretro/libretro-deps/tar.gz/7e6e34f0319f4c7448d72f0e949e76265ccf55a1",
+      "archiveSha256": "d7b3437ab94280c12ce24582c5adbc977bd01a1dfd73ea1a34971dd43f6eb24a",
+      "licenseDeclared": "BSD-3-Clause AND FTL AND GPL-2.0-or-later AND IJG AND LGPL-2.1-or-later AND Libpng AND MIT AND Zlib"
+    },
+    {
+      "path": "backends/platform/libretro/deps/libretro-common",
+      "repository": "https://github.com/libretro/libretro-common",
+      "commit": "70ed90c42ddea828f53dd1b984c6443ddb39dbd6",
+      "archive": "https://codeload.github.com/libretro/libretro-common/tar.gz/70ed90c42ddea828f53dd1b984c6443ddb39dbd6",
+      "archiveSha256": "f8dcfc36107c1715e456cb4d15690aa50bb6f75cdefc3ab1fb32d0a13b245297",
+      "licenseDeclared": "MIT AND LicenseRef-Public-Domain-libco"
+    }
+  ],
+  "patches": [
+    {
+      "path": "engines/patches/scummvm-lucent-exit-autosave.patch",
+      "sha256": "48ed9e33df1838a8cfa6cf9a8dc7b405612854bfa88e72a2746d7e74e266437b",
+      "purpose": "Synchronous fail-closed engine-native exit autosave and per-content resume-slot restoration for the Lucent in-process host."
+    }
+  ],
+  "configuration": {
+    "lite": true,
+    "noWip": true,
+    "liteEnginesListSha256": "2ca429dcf99521e021e6cbc2ccf668e381335652ac88ff4ee00613189308aa5e",
+    "genericSerialization": false,
+    "statePolicy": "engine-native-fail-closed-exit-autosave",
+    "hostPrepareExitSymbol": "retro_lucent_prepare_exit_autosave",
+    "resumeMarkerScope": "per-content-path-fnv1a64",
+    "prepareExitMaximumCoreFrames": 120
+  },
+  "stagingAdjustments": [
+    {
+      "path": "backends/platform/libretro/scripts/configure_submodules.sh",
+      "reason": "Use the already SHA-256-verified offline dependency archives instead of invoking the upstream network-clone helper."
+    },
+    {
+      "path": "backends/platform/libretro/deps/libretro-deps/libmad/version",
+      "reason": "Remove non-source package metadata whose extensionless filename shadows the Android NDK r27 libc++ version header."
+    },
+    {
+      "path": "backends/platform/libretro/jni/Android.mk",
+      "reason": "Add -Wl,-z,max-page-size=16384 so every PT_LOAD segment is compatible with Android devices using 16 KiB pages."
+    },
+    {
+      "path": "engines/patches/scummvm-lucent-exit-autosave.patch",
+      "reason": "Fail held-Stop closed unless an engine-native autosave and per-content resume marker both complete, then restore that engine-specific slot at next launch."
+    }
+  ],
+  "artifact": {
+    "path": "engines/build/arm64-v8a/scummvm_libretro.so",
+    "sha256": "668aa27dd70990921372d95338dab6384610f721b7bcb4f224b67e63e44d1f4d",
+    "size": 25793128,
+    "firstCleanBuildSha256": "668aa27dd70990921372d95338dab6384610f721b7bcb4f224b67e63e44d1f4d",
+    "secondCleanBuildSha256": "668aa27dd70990921372d95338dab6384610f721b7bcb4f224b67e63e44d1f4d",
+    "ptLoadAlignment": "0x4000",
+    "reproducible": true
+  },
+  "runtimeAssets": {
+    "path": "engines/build/arm64-v8a/scummvm-system/scummvm",
+    "source": "Pinned ScummVM source datafiles and themes",
+    "fileCount": 207,
+    "treeSha256": "e84d2de3dd5ff482e186f1cf6820ecf91e99bfacc586e97b3e795245bdfbb7f1",
+    "archiveIsDistributionInput": false
+  },
+  "compliance": {
+    "audit": "engines/scummvm-dependency-audit.json",
+    "generator": "tools/generate_scummvm_compliance_bundle.py",
+    "externalObjectCount": 337,
+    "externalComponentCount": 15,
+    "embeddedComponentCount": 4,
+    "policy": "Packaging fails on unknown components, object-count drift, artifact drift, or license-evidence drift."
+  },
+  "distributionGate": "binary-specific-compliance-passed-device-qualification-required",
+  "unresolved": [
+    "Android runtime, input, performance, lifecycle, and device qualification",
+    "Full-engine profile compatibility and size review"
+  ]
+}

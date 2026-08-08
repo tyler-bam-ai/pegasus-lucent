@@ -1,0 +1,46 @@
+#!/bin/sh
+set -eu
+
+# Reproduce the exact Git metadata visible in the locked Dolphin checkout and
+# its mGBA submodule while building from checksum-verified source archives.
+# This prevents CMake from walking into an unrelated parent checkout without
+# carrying a source patch in Lucent's compiler proof.
+case "$*" in
+    "--version")
+        printf '%s\n' "git version 2.50.1 (Apple Git-155)"
+        exit 0
+        ;;
+esac
+
+case "$PWD" in
+    */Externals/mGBA/mgba)
+        case "$*" in
+            "describe --always --abbrev=40 --dirty")
+                printf '%s\n' 0b40863f64d0940f333fa1c638e75f86f8a26a33 ;;
+            "describe --always --dirty")
+                printf '%s\n' 0b40863 ;;
+            "rev-list HEAD --count")
+                printf '%s\n' 1 ;;
+            "symbolic-ref --short HEAD"|"describe --tag --exact-match")
+                exit 1 ;;
+            *)
+                exec /usr/bin/git "$@" ;;
+        esac
+        ;;
+    *)
+        case "$*" in
+            "rev-parse HEAD")
+                printf '%s\n' 0ff12a5a2835762e0665afe6a161a648b433f996 ;;
+            "describe --always --long --dirty")
+                printf '%s\n' 0ff12a5 ;;
+            "rev-parse --abbrev-ref HEAD")
+                printf '%s\n' master ;;
+            "rev-list --count HEAD ^master")
+                printf '%s\n' 0 ;;
+            "describe --exact-match HEAD")
+                exit 1 ;;
+            *)
+                exec /usr/bin/git "$@" ;;
+        esac
+        ;;
+esac

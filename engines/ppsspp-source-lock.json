@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-08-07",
+  "buildProfile": "android-arm64-libretro-no-ffmpeg",
+  "closureScope": "exact-staged-compile-inputs-for-this-build-profile",
+  "sourceDateEpoch": 1778934711,
+  "toolchain": {
+    "host": "Darwin",
+    "androidAbi": "arm64-v8a",
+    "androidApi": 23,
+    "ndkVersion": "27.0.12077973",
+    "ndkSourcePropertiesSha256": "1c4a54b31c5ed242a901b4a472d412819b5e08405df1c58066bd555f9dd52515",
+    "cmakeVersion": "3.31.6-g38307f9",
+    "cmakeExecutableSha256": "94d4a3ce9e70cd9dae26e5fc7bb6ff4de67c58759762d4118a96ad2bc1b76be8",
+    "ninjaVersion": "1.12.1",
+    "ninjaExecutableSha256": "3d508e91d5c159986bea2a472b1bfa849909da133aa05582a7174d33328af933"
+  },
+  "limitedProfileReproducibilityProof": {
+    "freshBuildCount": 2,
+    "byteIdentical": true,
+    "artifactPath": "engines/build/arm64-v8a/ppsspp_libretro.so",
+    "artifactSha256": "734ba9e0c1e7040b16b0a1e6d2183914e8f9e203b9c3102899427425a925c3ba",
+    "gnuBuildId": "f791f34db0009b16b9a1b0e6713c90c115db10a1",
+    "absoluteBuilderPathMatches": 0,
+    "scope": "compiler-linker-proof-only; USE_FFMPEG=OFF; not production qualification"
+  },
+  "recipePatch": {
+    "path": "engines/patches/ppsspp-pin-version-without-git.patch",
+    "sha256": "a4029bd6a82ff26f8b6d8c3e7d519342fbbae685c0d266cc77045393b2287e99"
+  },
+  "core": {
+    "repository": "https://github.com/hrydgard/ppsspp",
+    "tag": "v1.20.4",
+    "tagObject": "3a31057b7e44270b4d5cef8c31b6559d51802a3b",
+    "commit": "fa50bb1976065c4f8b1b47af227d367fe9771555",
+    "archiveSha256": "9054138072d49c306d65c17059bd85662b4ff46abe1ea6bb53d854dc80592ea6"
+  },
+  "dependencies": [
+    {"path": "ext/SPIRV-Cross", "repository": "https://github.com/KhronosGroup/SPIRV-Cross", "commit": "4212eef67ed0ca048cb726a6767185504e7695e5", "archiveSha256": "a7adf77b5680795302aee160309c6cb81b0da341d92bd7face01f9a156b65aeb"},
+    {"path": "ext/aemu_postoffice", "repository": "https://github.com/Kethen/aemu_postoffice", "commit": "530fee545c27ffb8524a8f496cbbcfdb687fe8c5", "archiveSha256": "b3eb2372c5f4f611ab66e3b596be7ba12fe96b9bb347e7b2bcd4d7c979363e53"},
+    {"path": "ext/armips", "repository": "https://github.com/Kingcom/armips", "commit": "a8d71f0f279eb0d30ecf6af51473b66ae0cf8e8d", "archiveSha256": "a520df5b673fc1649661f8506ddf35f62fb55e05d9f5a6c44b4d807b6aab3fbd"},
+    {"path": "ext/armips/ext/filesystem", "repository": "https://github.com/Kingcom/filesystem", "commit": "3f1c185ab414e764c694b8171d1c4d8c5c437517", "archiveSha256": "cc1c5439d29031477868bdea25b68b4210dc8ed018bb63a65e708afe405db4e1"},
+    {"path": "ext/cpu_features", "repository": "https://github.com/google/cpu_features", "commit": "fd4ffc1632db7b4e763bd28ffa6fc9d761cf3587", "archiveSha256": "60b2e0e7adfbf40f0c69fb77ad197440a8435532285a83b19f99b4f886cca67a"},
+    {"path": "ext/glslang", "repository": "https://github.com/hrydgard/glslang", "commit": "50e0708ec3a5c16020c4f845c654b80b8edb80bd", "archiveSha256": "15941716c09bdb476e8eefcec24b8c8359e5e7bca3bfebe648b6a2206689c485"},
+    {"path": "ext/libadrenotools", "repository": "https://github.com/bylaws/libadrenotools", "commit": "8fae8ce254dfc1344527e05301e43f37dea2df80", "archiveSha256": "ceffce971676d4cfdf348a082df06fc92a1dca6d95bea892a480d63f200961cb"},
+    {"path": "ext/libadrenotools/lib/linkernsbypass", "repository": "https://github.com/bylaws/liblinkernsbypass", "commit": "aa3975893d83ef1bc84c321ec60c65fbf1287887", "archiveSha256": "da1128c8aa771c4d24766b53a47822d0717baa5c536ca8491220402942b80638"},
+    {"path": "ext/libchdr", "repository": "https://github.com/rtissera/libchdr", "commit": "8bba7745d758627258b315997a860039244cedaf", "archiveSha256": "169e3d2edf86d5501434301fa2505319ebd40aae83d4a5eedf05f6becbf13a3b"},
+    {"path": "ext/lua", "repository": "https://github.com/hrydgard/ppsspp-lua", "commit": "7648485f14e8e5ee45e8e39b1eb4d3206dbd405a", "archiveSha256": "ee31027159979d7be564e19710e10339179992f6d663d38337e78340dd31987b"},
+    {"path": "ext/miniupnp", "repository": "https://github.com/miniupnp/miniupnp", "commit": "27d13ca9beeb5541f5fbf11959dced03dac39972", "archiveSha256": "a07a32b2db1f6c5f2823847d47ba6e326b08fbcfe78690801fda9c3aeddf25a3"},
+    {"path": "ext/naett", "repository": "https://github.com/erkkah/naett", "commit": "5f695cfa9fcbf30668a4d3ac4b4abf1cd89a1302", "archiveSha256": "65b68d645290ecd7478747d52feebf73b390021137a10897cc2a692bf6446afe"},
+    {"path": "ext/OpenXR-SDK", "repository": "https://github.com/KhronosGroup/OpenXR-SDK", "commit": "be392bf6949adeeabad5082aa79d12aacbda781f", "archiveSha256": "f91007ec5cd5380184678cb282353a6b97b6ba2278ef4911e217472186a31762"},
+    {"path": "ext/rapidjson", "repository": "https://github.com/Tencent/rapidjson", "commit": "73063f5002612c6bf64fe24f851cd5cc0d83eef9", "archiveSha256": "896eb817fb2bc62a0a84ca65fac3e3c385b410e6dbf70d69c411e25776663e39"},
+    {"path": "ext/rcheevos", "repository": "https://github.com/RetroAchievements/rcheevos", "commit": "ebfe8ca1bf944358e27200d66964fcb4e00e2487", "archiveSha256": "5a5afc951f1d485acd1b532a104a2a73b859a359ac0563704b1911c862c3854e"},
+    {"path": "ext/zstd", "repository": "https://github.com/facebook/zstd", "commit": "f8745da6ff1ad1e7bab384bd1f9d742439278e99", "archiveSha256": "4b0bd1f0cfb25e61b9103c35f27395530ff5b4c0d2513a00fd745849e85ea52c"},
+    {"path": "libretro/libretro-common", "repository": "https://github.com/libretro/libretro-common", "commit": "76a3d54feb0ee0ce9d59b90aa24694f3782063d3", "archiveSha256": "da3c61d2d47df12536a7977443387c1c3d7a750fe8c916c943860788b590db7e"}
+  ],
+  "excluded": [
+    {
+      "path": "ffmpeg",
+      "reason": "Disabled for the first compiler/linker proof; production gameplay qualification is blocked until the exact FFmpeg closure and notices are pinned."
+    },
+    {
+      "path": "pspautotests",
+      "reason": "Not built or redistributed because the pinned repository's LICENSE.txt is an unfilled placeholder."
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "firmware": [
+    {
+      "engineId": "gearcoleco",
+      "file": "colecovision.rom",
+      "sha256": "9edcba7a13f7b4852185ad1213bcd2185251b38e80381bfeef3da7cf5817b03d",
+      "license": "GPL-3.0-only",
+      "repository": "https://github.com/sehugg/8bitworkshop",
+      "commit": "5391cefbc2a3af33e3283362ae854e3862059a07",
+      "archiveSha256": "a62445862e2aaccfe0c4f86fb1c524bb0512bd7beaf3f4b82dc536040611c0cb",
+      "sourcePath": "meta/romsrc/coleco/minbios.asm",
+      "binaryPath": "mame/roms/coleco/313 10031-4005 73108a.u2",
+      "qualificationStatus": "blocked-unverified-source-to-binary-provenance",
+      "scope": "Minimal direct-boot QA firmware. It is not a compatibility replacement for cartridges that call the proprietary ColecoVision BIOS."
+    }
+  ]
+}

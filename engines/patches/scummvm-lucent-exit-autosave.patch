@@ -1,0 +1,279 @@
+--- a/engines/engine.h
++++ b/engines/engine.h
+@@ -740,6 +740,19 @@
+ 	void saveAutosaveIfEnabled();
+ 
+ 	/**
++	 * Save a synchronous, non-interactive autosave before Lucent exits.
++	 *
++	 * Unlike periodic autosaves this ignores the configured autosave interval,
++	 * but it still refuses to save when the engine cannot safely save at the
++	 * current moment or does not expose an autosave slot. It never overwrites a
++	 * user-authored save in the autosave slot.
++	 *
++	 * @param slot Receives the engine-specific autosave slot on success.
++	 * @return true only after the engine reports that the save completed.
++	 */
++	bool saveLucentExitAutosave(int &slot);
++
++	/**
+ 	 * Indicate whether an autosave can currently be done.
+ 	 */
+ 	virtual bool canSaveAutosaveCurrently() {
+--- a/engines/engine.cpp
++++ b/engines/engine.cpp
+@@ -704,7 +704,36 @@
+ 	}
+ 	_autoSaving = false;
+ }
++
++bool Engine::saveLucentExitAutosave(int &slot) {
++	slot = -1;
++	if (_autoSaving)
++		return false;
++
++	const int autoSaveSlot = getAutosaveSlot();
++	if (autoSaveSlot < 0 || !canSaveAutosaveCurrently())
++		return false;
+ 
++	// Exit must never display a modal overwrite prompt. If the engine's
++	// autosave slot contains a manual save, fail closed and keep playing.
++	const SaveStateDescriptor desc = getMetaEngine()->querySaveMetaInfos(
++		_targetName.c_str(), autoSaveSlot);
++	if (desc.isValid() && !desc.isAutosave())
++		return false;
++
++	_autoSaving = true;
++	const Common::Error result = saveGameState(
++		autoSaveSlot, Common::String("Lucent Quick Resume"), true);
++	_autoSaving = false;
++	_lastAutosaveTime = _system->getMillis();
++
++	if (result.getCode() != Common::kNoError)
++		return false;
++
++	slot = autoSaveSlot;
++	return true;
++}
++
+ void Engine::errorString(const char *buf1, char *buf2, int size) {
+ 	Common::strlcpy(buf2, buf1, size);
+ }
+--- a/backends/events/default/default-events.cpp
++++ b/backends/events/default/default-events.cpp
+@@ -36,6 +36,10 @@
+ #include "gui/debugger.h"
+ #include "gui/message.h"
+ 
++#ifdef __LIBRETRO__
++#include "backends/platform/libretro/include/libretro-lucent.h"
++#endif
++
+ DefaultEventManager::DefaultEventManager(Common::EventSource *boss) :
+ 	_buttonState(0),
+ 	_modifierState(0),
+@@ -93,6 +97,21 @@
+ 	event = _eventQueue.pop();
+ 	bool forwardEvent = true;
+ 
++#ifdef __LIBRETRO__
++	// The request originates on the frontend thread, but engine save methods
++	// must run here on the emulation thread. A failed save consumes the quit
++	// event, leaving the game alive so Lucent can report the failure.
++	if (event.type == Common::EVENT_QUIT &&
++			(lucent_scummvm_exit_autosave_requested() || lucent_scummvm_exit_autosave_canceled())) {
++		int slot = -1;
++		const bool saved = !lucent_scummvm_exit_autosave_canceled() &&
++			g_engine && g_engine->saveLucentExitAutosave(slot);
++		lucent_scummvm_exit_autosave_completed(saved, slot);
++		if (!saved)
++			return false;
++	}
++#endif
++
+ 	// If the backend has the kFeatureNoQuit or the "Return to Launcher at Exit" option is enabled,
+ 	// replace "Quit" event with "Return to Launcher". This is also handled in scummvm_main, but
+ 	// doing it here allows getting the correct confirmation dialog if the "confirm_exit" setting
+--- a/backends/platform/libretro/src/libretro-core.cpp
++++ b/backends/platform/libretro/src/libretro-core.cpp
+@@ -55,6 +55,7 @@
+ #include "backends/platform/libretro/include/libretro-core-options.h"
+ #include "backends/platform/libretro/include/libretro-os.h"
+ #include "backends/platform/libretro/include/libretro-mapper.h"
++#include "backends/platform/libretro/include/libretro-lucent.h"
+ 
+ static struct retro_game_info game_buf;
+ static struct retro_game_info *game_buf_ptr;
+@@ -106,6 +107,96 @@
+ static bool input_bitmask_supported = false;
+ static bool updating_variables = false;
+ 
++enum LucentExitAutosaveStatus {
++	LUCENT_EXIT_AUTOSAVE_IDLE = 0,
++	LUCENT_EXIT_AUTOSAVE_PENDING,
++	LUCENT_EXIT_AUTOSAVE_SUCCEEDED,
++	LUCENT_EXIT_AUTOSAVE_FAILED,
++	LUCENT_EXIT_AUTOSAVE_CANCELED
++};
++
++static volatile LucentExitAutosaveStatus lucent_exit_autosave_status = LUCENT_EXIT_AUTOSAVE_IDLE;
++static char lucent_resume_marker_path[1024] = {0};
++
++static uint64 lucent_fnv1a(const char *value) {
++	uint64 hash = UINT64_C(14695981039346656037);
++	for (const unsigned char *cursor = (const unsigned char *)value; cursor && *cursor; ++cursor) {
++		hash ^= *cursor;
++		hash *= UINT64_C(1099511628211);
++	}
++	return hash;
++}
++
++static void lucent_set_resume_marker_path(const char *content_path) {
++	lucent_resume_marker_path[0] = '\0';
++	const char *save_dir = retro_get_save_dir();
++	if (!save_dir || !*save_dir || !content_path || !*content_path)
++		return;
++	snprintf(lucent_resume_marker_path, sizeof(lucent_resume_marker_path),
++		"%s/.lucent-scummvm-%016llx.resume", save_dir,
++		(unsigned long long)lucent_fnv1a(content_path));
++}
++
++static int lucent_read_resume_slot(void) {
++	if (!lucent_resume_marker_path[0])
++		return -1;
++	RFILE *marker = filestream_open(lucent_resume_marker_path,
++		RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
++	if (!marker)
++		return -1;
++	char value[16] = {0};
++	const int64_t count = filestream_read(marker, value, sizeof(value) - 1);
++	filestream_close(marker);
++	if (count <= 0)
++		return -1;
++	char *end = nullptr;
++	const long slot = strtol(value, &end, 10);
++	return end != value && slot >= 0 && slot <= 999 ? (int)slot : -1;
++}
++
++static bool lucent_write_resume_slot(int slot) {
++	if (!lucent_resume_marker_path[0] || slot < 0 || slot > 999)
++		return false;
++	RFILE *marker = filestream_open(lucent_resume_marker_path,
++		RETRO_VFS_FILE_ACCESS_WRITE, RETRO_VFS_FILE_ACCESS_HINT_NONE);
++	if (!marker)
++		return false;
++	char value[16] = {0};
++	const int length = snprintf(value, sizeof(value), "%d\n", slot);
++	const int64_t count = filestream_write(marker, value, length);
++	filestream_flush(marker);
++	filestream_close(marker);
++	return count == length;
++}
++
++bool lucent_scummvm_exit_autosave_requested(void) {
++	return lucent_exit_autosave_status == LUCENT_EXIT_AUTOSAVE_PENDING;
++}
++
++bool lucent_scummvm_exit_autosave_canceled(void) {
++	return lucent_exit_autosave_status == LUCENT_EXIT_AUTOSAVE_CANCELED;
++}
++
++void lucent_scummvm_exit_autosave_completed(bool success, int slot) {
++	if (success && !lucent_write_resume_slot(slot))
++		success = false;
++	lucent_exit_autosave_status = success ? LUCENT_EXIT_AUTOSAVE_SUCCEEDED : LUCENT_EXIT_AUTOSAVE_FAILED;
++}
++
++bool retro_lucent_prepare_exit_autosave(void) {
++	if (!retro_emu_thread_started() || retro_emu_thread_exited())
++		return false;
++	lucent_exit_autosave_status = LUCENT_EXIT_AUTOSAVE_PENDING;
++	LIBRETRO_G_SYSTEM->requestQuit();
++	for (int frames = 0; frames < 120 &&
++			lucent_exit_autosave_status == LUCENT_EXIT_AUTOSAVE_PENDING &&
++			!retro_emu_thread_exited(); ++frames)
++		retro_switch_to_emu_thread();
++	if (lucent_exit_autosave_status == LUCENT_EXIT_AUTOSAVE_PENDING)
++		lucent_exit_autosave_status = LUCENT_EXIT_AUTOSAVE_CANCELED;
++	return lucent_exit_autosave_status == LUCENT_EXIT_AUTOSAVE_SUCCEEDED;
++}
++
+ #ifdef USE_OPENGL
+ static struct retro_hw_render_callback hw_render;
+ 
+@@ -1008,6 +1099,8 @@
+ #endif
+ 
+ 	if (game) {
++		lucent_exit_autosave_status = LUCENT_EXIT_AUTOSAVE_IDLE;
++		lucent_set_resume_marker_path(game->path);
+ 		game_buf_ptr = &game_buf;
+ 		memcpy(game_buf_ptr, game, sizeof(retro_game_info));
+ 		// Retrieve the game path.
+@@ -1061,18 +1154,30 @@
+ 			test_game_status = LIBRETRO_G_SYSTEM->testGame(parent_dir.getPath().toString().c_str(), true);
+ 		}
+ 
++		const int lucent_resume_slot = lucent_read_resume_slot();
++
+ 		// Preliminary game scan results
+ 		switch (test_game_status) {
+ 		case TEST_GAME_OK_ID_FOUND:
+-			sprintf(buffer, "-p \"%s\" %s", parent_dir.getPath().toString().c_str(), target_id);
++			snprintf(buffer, sizeof(buffer), "-p \"%s\"%s%s %s",
++				parent_dir.getPath().toString().c_str(),
++				lucent_resume_slot >= 0 ? " -x " : "",
++				lucent_resume_slot >= 0 ? Common::String::format("%d", lucent_resume_slot).c_str() : "",
++				target_id);
+ 			retro_log_cb(RETRO_LOG_DEBUG, "[scummvm] launch via target id and game dir\n");
+ 			break;
+ 		case TEST_GAME_OK_TARGET_FOUND:
+-			sprintf(buffer, "%s", target_id);
++			snprintf(buffer, sizeof(buffer), "%s%s%s",
++				lucent_resume_slot >= 0 ? "-x " : "",
++				lucent_resume_slot >= 0 ? Common::String::format("%d ", lucent_resume_slot).c_str() : "",
++				target_id);
+ 			retro_log_cb(RETRO_LOG_DEBUG, "[scummvm] launch via target id and scummvm.ini\n");
+ 			break;
+ 		case TEST_GAME_OK_ID_AUTODETECTED:
+-			sprintf(buffer, "-p \"%s\" --auto-detect", parent_dir.getPath().toString().c_str());
++			snprintf(buffer, sizeof(buffer), "-p \"%s\"%s%s --auto-detect",
++				parent_dir.getPath().toString().c_str(),
++				lucent_resume_slot >= 0 ? " -x " : "",
++				lucent_resume_slot >= 0 ? Common::String::format("%d", lucent_resume_slot).c_str() : "");
+ 			retro_log_cb(RETRO_LOG_DEBUG, "[scummvm] launch via autodetect\n");
+ 			break;
+ 		case TEST_GAME_KO_MULTIPLE_RESULTS:
+--- /dev/null
++++ b/backends/platform/libretro/include/libretro-lucent.h
+@@ -0,0 +1,30 @@
++/* ScummVM - Graphic Adventure Engine
++ *
++ * Lucent lifecycle bridge for the in-process libretro backend.
++ * This file is distributed under the same GPL-3.0-or-later terms as ScummVM.
++ */
++
++#ifndef BACKENDS_LIBRETRO_LUCENT_H
++#define BACKENDS_LIBRETRO_LUCENT_H
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++/**
++ * Request a synchronous engine-native autosave on the emulation thread.
++ * Returns false without unloading the game when saving is unsupported or
++ * unsafe at the current point.
++ */
++bool retro_lucent_prepare_exit_autosave(void);
++
++/** Internal event-manager bridge; not called by the Lucent host. */
++bool lucent_scummvm_exit_autosave_requested(void);
++bool lucent_scummvm_exit_autosave_canceled(void);
++void lucent_scummvm_exit_autosave_completed(bool success, int slot);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif

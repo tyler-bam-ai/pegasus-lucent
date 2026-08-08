@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "engineId": "applewin",
+  "sourceCommit": "2045a52d89363005476e670e45df048655edccf7",
+  "model": "Apple IIe Enhanced",
+  "distribution": {
+    "firmwareBundled": false,
+    "upstreamFirmwareResourcesRemoved": true,
+    "userFilesCopiedToPrivateStorageOnly": true
+  },
+  "requiredFiles": [
+    {
+      "destination": "Apple2e_Enhanced.rom",
+      "size": 16384,
+      "md5": "38063e08c778503fc03ecebb979769e9",
+      "sha256": "aab38a03ca8deabbb2f868733148c2efd6f655a59cd9c5d058ef3e0b7aa86a1a"
+    },
+    {
+      "destination": "Apple2e_Enhanced_Video.rom",
+      "size": 4096,
+      "md5": "9123fff3442c0e688cc6816be88dd4ab",
+      "sha256": "52c3b87900ac939f6525402cab1ccfd8f8259290fc6df54da48fb4c98ae3ed0f"
+    },
+    {
+      "destination": "DISK2-13sector.rom",
+      "size": 256,
+      "md5": "4f80448507cf43ab40c17ac08d89e278",
+      "sha256": "2d2599521fc5763d4e8c308c2ee7c5c4d5c93785b8fb9a4f7d0381dfd5eb60b6"
+    },
+    {
+      "destination": "DISK2.rom",
+      "size": 256,
+      "md5": "2020aa1413ff77fe29353f3ee72dc295",
+      "sha256": "de1e3e035878bab43d0af8fe38f5839c527e9548647036598ee6fe7ec74d2a7d"
+    },
+    {
+      "destination": "Parallel.rom",
+      "size": 256,
+      "md5": "5902996f16dc78fc013f6e1db14805b3",
+      "sha256": "e1b91e0156cabc879663f4c3936b3866bda74182fb0506667cd2d01e19d9e471"
+    },
+    {
+      "destination": "SSC.rom",
+      "size": 2048,
+      "md5": "67c0d61ab0911183faf05270f881a97e",
+      "sha256": "4fa1323ba31f4bd562486838397b7744257c126806766e360876720daca6e2aa"
+    }
+  ],
+  "releaseGates": {
+    "firmwareProvenance": false,
+    "legalTestContent": false,
+    "deviceQualification": false
+  }
+}

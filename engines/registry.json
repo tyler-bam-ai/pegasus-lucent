@@ -1,0 +1,211 @@
+{
+  "$schema": "./registry.schema.json",
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-06",
+  "engines": [
+    {
+      "id": "mesen", "phase": 1, "tier": "1A", "displayName": "Mesen",
+      "systems": ["nes"], "status": "experimental",
+      "statusReason": "Pinned source compiled successfully for Android ARM64 on 2026-08-06; reproducibility, state, performance, and device qualification remain.",
+      "source": {"repository": "https://github.com/libretro/Mesen", "commit": "0102910c39ad1a62bc3f784466f3f67ca9eae335", "archive": "https://github.com/libretro/Mesen/archive/0102910c39ad1a62bc3f784466f3f67ca9eae335.tar.gz", "archiveSha256": "360f97e907ada9b8e28a95652aa1d07656340e1d84ff868312745a566b250e01", "verifiedAt": "2026-08-06"},
+      "license": {"spdx": "GPL-3.0-only", "distributionGate": "compatible-candidate", "auditNote": "Full transitive dependency and corresponding-source audit remains required."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23},
+      "state": {"capability": "deterministic", "compatibilityVersion": 1, "qualified": false},
+      "firmware": {"required": false, "acceptedHashes": []}, "renderer": "software",
+      "build": {"recipe": "engines/build_core.sh mesen", "reproducible": false, "todo": "A clean Android ARM64 compile passed 2026-08-06; build twice in CI and compare stripped ELF build IDs before approval."},
+      "shipped": false
+    },
+    {
+      "id": "mesen-s", "phase": 1, "tier": "1A", "displayName": "Mesen-S",
+      "systems": ["snes"], "status": "experimental", "statusReason": "Pinned source compiled successfully for Android ARM64 on 2026-08-06; reproducibility, state, performance, and device qualification remain.",
+      "source": {"repository": "https://github.com/libretro/Mesen-S", "commit": "1d475abd174d16ecb1fb030961ff26076ab51ee6", "archive": "https://github.com/libretro/Mesen-S/archive/1d475abd174d16ecb1fb030961ff26076ab51ee6.tar.gz", "archiveSha256": "9dc6b2762769cae40ff2d008562fa0f8883d89906a693b44f1fbe8d8cfaedbd4", "verifiedAt": "2026-08-06"},
+      "license": {"spdx": "GPL-3.0-only", "distributionGate": "compatible-candidate", "auditNote": "Full transitive dependency and corresponding-source audit remains required."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "unverified", "compatibilityVersion": 1, "qualified": false},
+      "firmware": {"required": false, "acceptedHashes": []}, "renderer": "software", "build": {"recipe": "engines/build_core.sh mesen-s", "reproducible": false, "todo": "A clean Android ARM64 compile passed 2026-08-06; build twice in CI, compare stripped ELF build IDs, compare with bsnes, and qualify states."}, "shipped": false
+    },
+    {
+      "id": "sameboy", "phase": 1, "tier": "1A", "displayName": "SameBoy",
+      "systems": ["gb", "gbc"], "status": "experimental", "statusReason": "Pinned source and pinned RGBDS tools compiled successfully for Android ARM64 on 2026-08-06; reproducibility, state, performance, and device qualification remain.",
+      "source": {"repository": "https://github.com/LIJI32/SameBoy", "commit": "213a12ce93d66b105a113debd9396306066a7cfc", "archive": "https://github.com/LIJI32/SameBoy/archive/213a12ce93d66b105a113debd9396306066a7cfc.tar.gz", "archiveSha256": "21f5f230268808d9a2d17d1a8e01d3763891a2a8240b9459fa61e005fff56aa1", "verifiedAt": "2026-08-06"},
+      "license": {"spdx": "MIT", "distributionGate": "compatible-candidate", "auditNote": "Confirm generated tables and bundled third-party notices."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "unverified", "compatibilityVersion": 1, "qualified": false},
+      "firmware": {"required": false, "acceptedHashes": []}, "renderer": "software", "build": {"recipe": "engines/build_core.sh sameboy", "reproducible": false, "todo": "A clean Android ARM64 compile passed 2026-08-06; build twice in CI, compare stripped ELF build IDs, audit the pinned RGBDS host tools, and qualify GB/GBC states."}, "shipped": false
+    },
+    {
+      "id": "mgba", "phase": 1, "tier": "1A", "displayName": "mGBA",
+      "systems": ["gba"], "status": "experimental", "statusReason": "Pinned source compiled successfully for Android ARM64 on 2026-08-06; reproducibility, state, performance, and device qualification remain.",
+      "source": {"repository": "https://github.com/mgba-emu/mgba", "commit": "afd6f14eaf8bd35214ed3fb9dc69a92bfc3877a9", "archive": "https://github.com/mgba-emu/mgba/archive/afd6f14eaf8bd35214ed3fb9dc69a92bfc3877a9.tar.gz", "archiveSha256": "f996cbd5971acacff4227761bf01ac3d0f0ac30796bcb0bfbd1cc9a8f3fd6e93", "verifiedAt": "2026-08-06"},
+      "license": {"spdx": "MPL-2.0", "distributionGate": "compatible-candidate", "auditNote": "Full transitive dependency and corresponding-source audit remains required."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "deterministic", "compatibilityVersion": 1, "qualified": false},
+      "firmware": {"required": false, "acceptedHashes": []}, "renderer": "software", "build": {"recipe": "engines/build_core.sh mgba", "reproducible": false, "todo": "A clean Android ARM64 compile passed 2026-08-06; build twice in CI and compare stripped ELF build IDs before approval."}, "shipped": false
+    },
+    {
+      "id": "gearsystem", "phase": 1, "tier": "1A", "displayName": "Gearsystem",
+      "systems": ["sg1000", "mastersystem", "gamegear"], "status": "experimental", "statusReason": "Pinned source compiled successfully for Android ARM64 on 2026-08-06; reproducibility, state, performance, and device qualification remain.",
+      "source": {"repository": "https://github.com/drhelius/Gearsystem", "commit": "3c4cfcf54dfe9e36070815e76ee2bab9e754104f", "archive": "https://github.com/drhelius/Gearsystem/archive/3c4cfcf54dfe9e36070815e76ee2bab9e754104f.tar.gz", "archiveSha256": "47a13565cfa00bc169969e84bd2f94228badc52f8dd10fb43735013aa258518f", "verifiedAt": "2026-08-06"},
+      "license": {"spdx": "GPL-3.0-only", "distributionGate": "compatible-candidate", "auditNote": "Audit optional dependencies and bundled third-party code."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "deterministic", "compatibilityVersion": 1, "qualified": false},
+      "firmware": {"required": false, "acceptedHashes": []}, "renderer": "software", "build": {"recipe": "engines/build_core.sh gearsystem", "reproducible": false, "todo": "A clean Android ARM64 compile passed 2026-08-06; build twice in CI, compare stripped ELF build IDs, and qualify all three systems."}, "shipped": false
+    },
+    {
+      "id": "gearcoleco", "phase": 1, "tier": "1A", "displayName": "Gearcoleco",
+      "systems": ["colecovision"], "status": "experimental", "statusReason": "The core passed a direct-boot technical probe, but the candidate minimal BIOS is not qualified: its pinned upstream source/build path did not reproduce the packaged ROM byte-for-byte. Firmware identity, reproducibility, compatibility, performance, and physical-device qualification remain blocked.",
+      "source": {"repository": "https://github.com/drhelius/Gearcoleco", "commit": "5eb0d5fa8865de28b16a304431ca1d4bd4dd4e96", "archive": "https://github.com/drhelius/Gearcoleco/archive/5eb0d5fa8865de28b16a304431ca1d4bd4dd4e96.tar.gz", "archiveSha256": "ba398326d1ac98585b73b52eb6f0bae4e3659cbf39d8aecc274b7cd49eee0d18", "verifiedAt": "2026-08-06"},
+      "license": {"spdx": "GPL-3.0-only", "distributionGate": "compatible-candidate", "auditNote": "Audit optional dependencies and bundled third-party code."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "deterministic", "compatibilityVersion": 1, "qualified": false},
+      "firmware": {"required": true, "acceptedHashes": [], "notes": "BLOCKED: the 8bitworkshop tree places GPL source beside a minimal BIOS binary, but its pinned naken_asm build instructions did not reproduce that ROM byte-for-byte. No candidate identity is accepted; the proprietary original BIOS is never distributed."}, "renderer": "software", "build": {"recipe": "engines/build_core.sh gearcoleco", "reproducible": false, "todo": "Obtain an independently licensed binary or a pinned source/toolchain build that reproduces it byte-for-byte, then repeat technical and device qualification. BIOS-dependent commercial cartridges remain user-firmware gated."}, "shipped": false
+    },
+    {
+      "id": "freeintv", "phase": 1, "tier": "1A", "displayName": "FreeIntv",
+      "systems": ["intellivision"], "status": "experimental", "statusReason": "Pinned source compiled successfully for Android ARM64 on 2026-08-06; firmware policy, reproducibility, state, performance, and device qualification remain.",
+      "source": {"repository": "https://github.com/libretro/FreeIntv", "commit": "428915baf2bfc032fc03e645f4f8f9c6c3144979", "archive": "https://github.com/libretro/FreeIntv/archive/428915baf2bfc032fc03e645f4f8f9c6c3144979.tar.gz", "archiveSha256": "bc2826e362f78276c21f696c8bece86257d4a7be7484e96eaa79696016a3aac3", "verifiedAt": "2026-08-06"},
+      "license": {"spdx": "GPL-2.0-or-later", "distributionGate": "compatible-candidate", "auditNote": "Confirm all bundled data and dependencies share compatible terms."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "unverified", "compatibilityVersion": 1, "qualified": false},
+      "firmware": {"required": true, "acceptedHashes": [], "notes": "BLOCKED: FreeIntv requires both exec.bin and grom.bin. The jzIntv source archive's binary-only miniexec/minigrom substitutes lack corresponding source and file-scoped licensing evidence and are intentionally incompatible with many cartridges, so Lucent accepts neither identity."}, "renderer": "software", "build": {"recipe": "engines/build_core.sh freeintv", "reproducible": false, "todo": "Remain deny-by-default until both required firmware files have complete primary-source provenance, corresponding source, redistributable licenses, and named SHA-256 identities; then build twice and qualify compatibility/state behavior."}, "shipped": false
+    },
+    {
+      "id": "swanstation", "phase": 1, "tier": "1A", "displayName": "SwanStation",
+      "systems": ["psx"], "status": "experimental", "statusReason": "Pinned source, including its vendored dependency closure and MIT OpenBIOS fallback, compiled successfully for Android ARM64, passed the legal PS-EXE callback/state probe, and produced byte-identical artifacts in two path-isolated clean builds after source/build path and IPO normalization; dependency notices, renderer, performance, and remaining release qualification still apply.",
+      "source": {"repository": "https://github.com/libretro/swanstation", "commit": "5430a4a53b89fa5827c97b84ada29d23317245bc", "archive": "https://github.com/libretro/swanstation/archive/5430a4a53b89fa5827c97b84ada29d23317245bc.tar.gz", "archiveSha256": "df747c49b9038499b8d8762cd2662f0b8c128ee3999b74b19979e5ab20dd622d", "verifiedAt": "2026-08-06"},
+      "license": {"spdx": "GPL-3.0-only", "distributionGate": "compatible-candidate", "auditNote": "Audit renderer and bundled third-party dependency licenses."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "basic", "compatibilityVersion": 1, "qualified": false},
+      "firmware": {"required": false, "acceptedHashes": [], "notes": "The pinned source archive vendors the MIT-licensed PCSX-Redux OpenBIOS fallback; an external PlayStation BIOS remains optional."}, "renderer": "multi", "build": {"recipe": "engines/build_core.sh swanstation", "reproducible": true, "todo": "The exact proof is locked in engines/reproducibility-lock.json. Audit every vendored dependency notice and qualify Vulkan/GLES, sustained physical-device performance, and all lifecycle/state boundaries before approval."}, "shipped": false
+    },
+    {
+      "id": "melonds-ds", "phase": 1, "tier": "1A", "displayName": "melonDS DS",
+      "systems": ["nds"], "status": "experimental", "statusReason": "The top-level source and all eleven FetchContent dependencies are SHA-256 pinned, build fully offline for Android ARM64, and produced byte-identical artifacts in two clean builds. A legal upstream homebrew fixture passed nonzero video/audio/input callbacks and 100 consecutive byte-stable state cycles on an ARM64 emulator; touch, dual-screen, performance, and physical-device qualification remain.",
+      "source": {"repository": "https://github.com/JesseTG/melonds-ds", "commit": "2748dfb9409c94e6828d937d04e334f35127ba7c", "archive": "https://github.com/JesseTG/melonds-ds/archive/2748dfb9409c94e6828d937d04e334f35127ba7c.tar.gz", "archiveSha256": "502d33556397836b32c2b81d0ef066558710eb1e22758d53c3463a63b91796a5", "verifiedAt": "2026-08-06"},
+      "license": {"spdx": "GPL-3.0-or-later", "distributionGate": "compatible-candidate", "auditNote": "Pinned dependency closure is locally staged; the build emits the upstream-generated consolidated attribution file. Complete release-notice/source-offer review remains a shipping gate."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "deterministic", "compatibilityVersion": 1, "qualified": false},
+      "firmware": {"required": false, "acceptedHashes": [], "notes": "The qualified DS homebrew path uses the pinned core's built-in ARM7/ARM9 BIOS and generated firmware; user-supplied native firmware remains optional."}, "renderer": "software", "build": {"recipe": "engines/build_core.sh melonds-ds", "reproducible": true, "todo": "Qualify touch input, dual-screen layouts, sustained performance, physical-device behavior, and release notices/source offer before shipping."}, "shipped": false
+    },
+    {
+      "id": "fuse", "phase": 1, "tier": "1A", "displayName": "Fuse",
+      "systems": ["zxspectrum"], "status": "experimental", "statusReason": "Pinned source compiled successfully for Android ARM64 on 2026-08-06; keyboard profile, reproducibility, state, performance, and device qualification remain.",
+      "source": {"repository": "https://github.com/libretro/fuse-libretro", "commit": "000a8ae51a5141d75c109a22150e37ba06d57910", "archive": "https://github.com/libretro/fuse-libretro/archive/000a8ae51a5141d75c109a22150e37ba06d57910.tar.gz", "archiveSha256": "1be02e95ce7854b4fbe134f86a0023d058c7aa0c3d2cc4d81de0249d94cf5174", "verifiedAt": "2026-08-06"},
+      "license": {"spdx": "GPL-3.0-or-later", "distributionGate": "compatible-candidate", "auditNote": "Audit bundled Fuse and peripheral dependencies."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "unverified", "compatibilityVersion": 1, "qualified": false},
+      "firmware": {"required": false, "acceptedHashes": []}, "renderer": "software", "build": {"recipe": "engines/build_core.sh fuse", "reproducible": false, "todo": "A clean Android ARM64 compile passed 2026-08-06; build twice in CI, compare stripped ELF build IDs, and qualify keyboard and save-state behavior."}, "shipped": false
+    },
+    {
+      "id": "mame", "phase": 1, "tier": "1A", "displayName": "MAME",
+      "systems": ["arcade", "neogeo", "neogeocd"], "status": "experimental", "statusReason": "A SHA-256-pinned constrained Android ARM64 build passed the full callback and 100-cycle state gate with ROMless Pong and with an open ngdevkit Neo Geo AES fixture. Dependency notices, repeat-build reproducibility, Neo Geo CD firmware, and device qualification remain.",
+      "source": {"repository": "https://github.com/libretro/mame", "commit": "85eaed9c22242206b68eaca8310cf0dbde331b43", "archive": "https://github.com/libretro/mame/archive/85eaed9c22242206b68eaca8310cf0dbde331b43.tar.gz", "archiveSha256": "938efbe6bdd2d6e54fad7d9d53e93e9b09a0a708243e5929c286f21b1438833f", "verifiedAt": "2026-08-06"},
+      "license": {"spdx": "GPL-2.0-or-later", "distributionGate": "compatible-candidate", "auditNote": "MAME has driver-level notices; build scope and every included dependency require audit."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 24}, "state": {"capability": "deterministic", "compatibilityVersion": 1, "qualified": false},
+      "firmware": {"required": false, "requiredForSystems": ["neogeocd"], "acceptedHashes": ["c9412cfd819b18b57c6c02d360b652ebe9a0fad80225ac3f30c376205c54516f"], "notes": "Arcade requirements remain driver-specific and the ROMless Pong QA driver needs no firmware. Neo Geo AES/MVS qualification uses the LGPL-3.0-or-later ngdevkit nullbios archive at the accepted SHA-256. Neo Geo CD/CDZ still requires a user-provided main CD BIOS; open 000-lo.lo alone is insufficient. Commercial cartridge/disc content is never distributed."}, "renderer": "software", "build": {"recipe": "engines/build_core.sh mame", "reproducible": false, "todo": "A clean constrained Android ARM64 compile plus legal Arcade and Neo Geo AES probes passed 2026-08-06. The exact qualified core can be reused only after source, Makefile, NDK, recipe, and output SHA-256 verification. Repeat clean builds in CI, complete all driver/dependency notices, and qualify Neo Geo CD plus physical-device performance."}, "shipped": false
+    },
+    {
+      "id": "stella-2023", "phase": 1, "tier": "1B", "displayName": "Stella 2023",
+      "systems": ["atari2600"], "status": "license-blocked", "statusReason": "GPL-2.0-only compatibility must be resolved before combining with Lucent GPL-3.0-only.",
+      "source": {"repository": "https://github.com/libretro/stella2023", "commit": "878a9c8d5f03ef0b7cd190b5713d6bf31c48df38", "archive": "https://github.com/libretro/stella2023/archive/878a9c8d5f03ef0b7cd190b5713d6bf31c48df38.tar.gz", "archiveSha256": null, "verifiedAt": "2026-08-06"},
+      "license": {"spdx": "GPL-2.0-only", "distributionGate": "blocked", "auditNote": "Do not bundle until counsel approves an architecture or a compatible replacement is chosen."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "deterministic", "compatibilityVersion": 1, "qualified": false}, "firmware": {"required": false, "acceptedHashes": []}, "renderer": "software", "build": {"recipe": null, "reproducible": false, "todo": "Resolve license, hash archive, add recipe, and qualify states."}, "shipped": false
+    },
+    {
+      "id": "atari800", "phase": 1, "tier": "1B", "displayName": "Atari800",
+      "systems": ["atari5200", "atari800"], "status": "license-blocked", "statusReason": "GPL-2.0-only compatibility must be resolved before combining with Lucent GPL-3.0-only.",
+      "source": {"repository": "https://github.com/libretro/libretro-atari800", "commit": "9d3bcf283502512052e21c6f1453fbdf7aa3122b", "archive": "https://github.com/libretro/libretro-atari800/archive/9d3bcf283502512052e21c6f1453fbdf7aa3122b.tar.gz", "archiveSha256": null, "verifiedAt": "2026-08-06"},
+      "license": {"spdx": "GPL-2.0-only", "distributionGate": "blocked", "auditNote": "Do not bundle until license compatibility is resolved."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "unverified", "compatibilityVersion": 1, "qualified": false}, "firmware": {"required": false, "acceptedHashes": [], "notes": "Official core metadata lists the external Atari OS/BIOS files as optional."}, "renderer": "software", "build": {"recipe": null, "reproducible": false, "todo": "Resolve license and document optional firmware behavior, source hash, build, and state qualification."}, "shipped": false
+    },
+    {
+      "id": "prosystem", "phase": 1, "tier": "1A", "displayName": "ProSystem",
+      "systems": ["atari7800"], "status": "experimental", "statusReason": "Pinned source and Android ARM64 recipe are integrated; a redistributable visible-output fixture, deterministic state, lifecycle, performance, and physical-device evidence remain required.",
+      "source": {"repository": "https://github.com/libretro/prosystem-libretro", "commit": "363b6dfbd3e240762e022c2b4897b4fe55722be3", "archive": "https://github.com/libretro/prosystem-libretro/archive/363b6dfbd3e240762e022c2b4897b4fe55722be3.tar.gz", "archiveSha256": "7abed225b58d306bd3988c6950f851aa52a4c7b30d97cedcf626aa18fbf05282", "verifiedAt": "2026-08-07"},
+      "license": {"spdx": "GPL-2.0-or-later", "distributionGate": "compatible-candidate", "auditNote": "Pinned source notices grant GPL version 2 or any later version; configuration audit is recorded in engines/audits/prosystem-license.json."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "serialized", "compatibilityVersion": 1, "qualified": false}, "firmware": {"required": false, "acceptedHashes": [], "notes": "The Atari 7800 BIOS is optional according to the core metadata."}, "renderer": "software", "build": {"recipe": "engines/build_core.sh prosystem", "reproducible": true, "todo": "Two path-isolated builds are byte-identical. Add a redistributable visible-output fixture and qualify 100 state cycles, lifecycle, performance, and physical-device behavior."}, "shipped": false
+    },
+    {
+      "id": "caprice32", "phase": 1, "tier": "1B", "displayName": "Caprice32",
+      "systems": ["amstradcpc"], "status": "license-blocked", "statusReason": "GPL-2.0-only compatibility must be resolved before combining with Lucent GPL-3.0-only.",
+      "source": {"repository": "https://github.com/libretro/libretro-cap32", "commit": "4abfb8be233bec630f369379fb6c1d92d31f1c7d", "archive": "https://github.com/libretro/libretro-cap32/archive/4abfb8be233bec630f369379fb6c1d92d31f1c7d.tar.gz", "archiveSha256": null, "verifiedAt": "2026-08-06"},
+      "license": {"spdx": "GPL-2.0-only", "distributionGate": "blocked", "auditNote": "Do not bundle until license compatibility is resolved."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "serialized", "compatibilityVersion": 1, "qualified": false}, "firmware": {"required": false, "acceptedHashes": []}, "renderer": "software", "build": {"recipe": null, "reproducible": false, "todo": "Resolve license, hash archive, add recipe, and qualify keyboard and serialized states."}, "shipped": false
+    },
+    {
+      "id": "hatari", "phase": 1, "tier": "1B", "displayName": "Hatari",
+      "systems": ["atarist"], "status": "license-blocked", "statusReason": "GPL-2.0-only compatibility must be resolved before combining with Lucent GPL-3.0-only.",
+      "source": {"repository": "https://github.com/libretro/hatari", "commit": "92e2874e664be40e1b51b97e0ff925a1aa917f22", "archive": "https://github.com/libretro/hatari/archive/92e2874e664be40e1b51b97e0ff925a1aa917f22.tar.gz", "archiveSha256": null, "verifiedAt": "2026-08-06"},
+      "license": {"spdx": "GPL-2.0-only", "distributionGate": "blocked", "auditNote": "Do not bundle until license compatibility is resolved."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "serialized", "compatibilityVersion": 1, "qualified": false}, "firmware": {"required": true, "acceptedHashes": [], "notes": "A user-supplied tos.img is required."}, "renderer": "software", "build": {"recipe": null, "reproducible": false, "todo": "Resolve license and document TOS hashes, source hash, build, and serialized states."}, "shipped": false
+    },
+    {
+      "id": "beetle-pce-fast", "phase": 1, "tier": "1A", "displayName": "Beetle PCE Fast",
+      "systems": ["pcengine"], "status": "experimental", "statusReason": "The pinned source produced byte-identical Android ARM64 artifacts. An original cc65-built fixture passed visible video, audio, real input-effect replay, writable save RAM, and 100 exact serialized-state cycles on ARM64 Android; final integrated physical-device lifecycle qualification is still pending, so selection remains explicit and fail-closed.",
+      "source": {"repository": "https://github.com/libretro/beetle-pce-fast-libretro", "commit": "b211204c7026dff6e86e79b00185512e2421fff8", "archive": "https://github.com/libretro/beetle-pce-fast-libretro/archive/b211204c7026dff6e86e79b00185512e2421fff8.tar.gz", "archiveSha256": "ec3ef1874f0590ab6d5cd4bba86969ee085e8bef2de4b4e5f2422fe38a2c2d3d", "verifiedAt": "2026-08-07"},
+      "license": {"spdx": "GPL-2.0-or-later", "distributionGate": "compatible-candidate", "auditNote": "Configuration-specific audit is recorded in engines/audits/beetle-pce-fast-license.json; complete release notice and corresponding-source review remains."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "deterministic", "compatibilityVersion": 1, "qualified": false}, "firmware": {"required": false, "acceptedHashes": [], "notes": "This qualification row covers base PC Engine cartridge content only. PC Engine CD is deliberately deferred until Lucent can enforce a user-supplied system-card identity per system."}, "renderer": "software", "build": {"recipe": "engines/build_core.sh beetle-pce-fast", "reproducible": true, "todo": "Complete final in-window physical-device lifecycle/performance qualification and keep PC Engine CD unavailable until its firmware contract is enforced."}, "shipped": false
+    },
+    {
+      "id": "blastem", "phase": 1, "tier": "1A", "displayName": "BlastEm",
+      "systems": ["megadrive"], "status": "experimental", "statusReason": "The pinned GPL-compatible source has a closed Android ARM64 build recipe, configuration-specific license audit, 16 KiB ELF alignment, and two isolated byte-identical builds. Fixture, serialized-state, performance, lifecycle, and physical-device qualification remain, so selection is qualification-only and fail-closed.",
+      "source": {"repository": "https://github.com/libretro/blastem", "commit": "84e567e17b6fb3cea23146c4209c18d50d46cbf0", "archive": "https://github.com/libretro/blastem/archive/84e567e17b6fb3cea23146c4209c18d50d46cbf0.tar.gz", "archiveSha256": "7bf9a28959fbced50479e59b7832bf9b2a9746bb06620bdd5c28c89d205e8fc7", "verifiedAt": "2026-08-07"},
+      "license": {"spdx": "GPL-3.0-or-later AND Zlib", "distributionGate": "compatible-candidate", "auditNote": "The selected libretro build excludes the standalone SDL/JNI and Nuklear UI paths. The exact source/dependency audit is recorded in engines/audits/blastem-license.json."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "serialized", "compatibilityVersion": 1, "qualified": false}, "firmware": {"required": false, "acceptedHashes": []}, "renderer": "software", "build": {"recipe": "engines/build_core.sh blastem", "reproducible": true, "todo": "Complete legal fixture, 100 state cycles, performance, lifecycle, and physical menu-path qualification."}, "shipped": false
+    },
+    {
+      "id": "picodrive", "phase": 1, "tier": "1B", "displayName": "PicoDrive",
+      "systems": ["segacd", "sega32x"], "status": "license-blocked", "statusReason": "Legacy MAME-derived licensing requires a complete file-level audit before distribution. Base Mega Drive / Genesis content is assigned to the separately audited BlastEm core.",
+      "source": {"repository": "https://github.com/libretro/picodrive", "commit": "6248b51ffbe212ce441de023ccea6b10fa4d7082", "archive": "https://github.com/libretro/picodrive/archive/6248b51ffbe212ce441de023ccea6b10fa4d7082.tar.gz", "archiveSha256": null, "verifiedAt": "2026-08-06"},
+      "license": {"spdx": "LicenseRef-PicoDrive-MAME", "distributionGate": "blocked", "auditNote": "Do not bundle until every source file and third-party component is mapped to compatible terms."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "deterministic", "compatibilityVersion": 1, "qualified": false}, "firmware": {"required": false, "requiredForSystems": ["segacd"], "acceptedHashes": [], "notes": "Mega Drive and 32X content need no BIOS; Sega CD content needs a user-supplied regional BIOS."}, "renderer": "software", "build": {"recipe": null, "reproducible": false, "todo": "Complete file-level license and Sega CD firmware audit, hash archive, add recipe, and qualify all systems."}, "shipped": false
+    },
+    {
+      "id": "beetle-neopop", "phase": 1, "tier": "1A", "displayName": "Beetle NeoPop",
+      "systems": ["ngp"], "status": "experimental", "statusReason": "The pinned source produced byte-identical Android ARM64 artifacts. The MIT Stargunner fixture passed visible video, audio, real input-effect replay, and 100 exact serialized-state cycles on ARM64 Android; final integrated physical-device lifecycle qualification is still pending, so selection remains explicit and fail-closed.",
+      "source": {"repository": "https://github.com/libretro/beetle-ngp-libretro", "commit": "a50d5ac288a81f2104ddf43195a4efdd15c72227", "archive": "https://github.com/libretro/beetle-ngp-libretro/archive/a50d5ac288a81f2104ddf43195a4efdd15c72227.tar.gz", "archiveSha256": "ffeabf2a357548f3a55423d542c31bb1e08571d81d7104f8213df3bfa2eb9c9f", "verifiedAt": "2026-08-07"},
+      "license": {"spdx": "GPL-2.0-or-later", "distributionGate": "compatible-candidate", "auditNote": "Configuration-specific audit is recorded in engines/audits/beetle-neopop-license.json; complete release notice and corresponding-source review remains."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "deterministic", "compatibilityVersion": 1, "qualified": false}, "firmware": {"required": false, "acceptedHashes": []}, "renderer": "software", "build": {"recipe": "engines/build_core.sh beetle-neopop", "reproducible": true, "todo": "Complete final in-window physical-device lifecycle/performance qualification."}, "shipped": false
+    },
+    {
+      "id": "beetle-cygne", "phase": 1, "tier": "1A", "displayName": "Beetle Cygne",
+      "systems": ["wonderswancolor"], "status": "experimental", "statusReason": "The pinned source produced byte-identical Android ARM64 artifacts. The MIT Bug Witch fixture passed visible video, audio, real input-effect replay, and 100 exact serialized-state cycles on ARM64 Android; final integrated physical-device lifecycle qualification is still pending. Monochrome WonderSwan remains unadvertised until a separately licensed fixture qualifies that system.",
+      "source": {"repository": "https://github.com/libretro/beetle-wswan-libretro", "commit": "4b01295838ea89e3f1355bbe4cb5cf98aa6108cd", "archive": "https://github.com/libretro/beetle-wswan-libretro/archive/4b01295838ea89e3f1355bbe4cb5cf98aa6108cd.tar.gz", "archiveSha256": "bce15c0e2505e15b7b55fa1d51b4a12219d07a67be62bbca5c26678d0d89c659", "verifiedAt": "2026-08-07"},
+      "license": {"spdx": "GPL-2.0-or-later AND LicenseRef-V30MZ-Permissive", "distributionGate": "compatible-candidate", "auditNote": "Configuration-specific audit and the V30MZ attribution requirement are recorded in engines/audits/beetle-cygne-license.json; complete release notice and corresponding-source review remains."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "deterministic", "compatibilityVersion": 1, "qualified": false}, "firmware": {"required": false, "acceptedHashes": []}, "renderer": "software", "build": {"recipe": "engines/build_core.sh beetle-cygne", "reproducible": true, "todo": "Complete final in-window physical-device lifecycle/orientation qualification and qualify monochrome WonderSwan with a separately licensed fixture before advertising it."}, "shipped": false
+    },
+    {
+      "id": "beetle-vb", "phase": 1, "tier": "1B", "displayName": "Beetle Virtual Boy",
+      "systems": ["virtualboy"], "status": "license-blocked", "statusReason": "The pinned build includes the legacy SoftFloat 2b terms, including additional indemnification and responsibility clauses. Compatibility with Lucent's GPLv3 combined distribution has not been established, so packaging remains blocked.",
+      "source": {"repository": "https://github.com/libretro/beetle-vb-libretro", "commit": "3f53a40bf8aa18777514fd4b220960427e312a3f", "archive": "https://github.com/libretro/beetle-vb-libretro/archive/3f53a40bf8aa18777514fd4b220960427e312a3f.tar.gz", "archiveSha256": "141f9b7a869c5632c2a59ca417f6d04b79687fd1ff05a2b62ed406139f317719", "verifiedAt": "2026-08-07"},
+      "license": {"spdx": "GPL-2.0-or-later AND LicenseRef-SoftFloat-2b", "distributionGate": "blocked", "auditNote": "The blocking configuration-specific audit is recorded in engines/audits/beetle-vb-license.json. Do not bundle without a compatible replacement or legal clearance."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "unverified", "compatibilityVersion": 1, "qualified": false}, "firmware": {"required": false, "acceptedHashes": []}, "renderer": "software", "build": {"recipe": "engines/build_core.sh beetle-vb", "reproducible": false, "todo": "Replace or obtain clearance for the SoftFloat 2b component before recording a release reproducibility claim or performing runtime qualification."}, "shipped": false
+    },
+    {
+      "id": "mupen64plus-next", "phase": 1, "tier": "1A", "displayName": "Mupen64Plus-Next",
+      "systems": ["n64"], "status": "experimental", "statusReason": "The exact vendored Android ARM64 GLES3 configuration has a closed dependency inventory and two byte-identical builds that link the pinned NDK C++ runtime statically while excluding private Android GraphicBuffer APIs. Integrated physical-device and state-cycle qualification remain, so selection is qualification-only and fail-closed.",
+      "source": {"repository": "https://github.com/libretro/mupen64plus-libretro-nx", "commit": "f275caf4b2bfa1e6d1c51636746ea793f3d80320", "archive": "https://github.com/libretro/mupen64plus-libretro-nx/archive/f275caf4b2bfa1e6d1c51636746ea793f3d80320.tar.gz", "archiveSha256": "1810b7bbdc4abfdeee8a9f7f99c4a91dab601a228935802317c25a43d7cf9dbb", "verifiedAt": "2026-08-07"},
+      "license": {"spdx": "GPL-2.0-or-later AND LGPL-3.0-or-later AND MIT AND BSD-2-Clause AND Zlib AND Libpng-2.0 AND (Apache-2.0 WITH LLVM-exception)", "distributionGate": "compatible-candidate", "auditNote": "Selected source files permit GPLv2 or later; Lucent exercises GPLv3 for the source-available aggregate. The exact included and excluded dependency closure, including the pinned NDK r27 static C++ runtime, is recorded in engines/audits/mupen64plus-next-license.json."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "serialized", "compatibilityVersion": 1, "qualified": false}, "firmware": {"required": false, "acceptedHashes": []}, "renderer": "opengl", "build": {"recipe": "engines/build_core.sh mupen64plus-next", "reproducible": true, "todo": "Two path-isolated ABI-safe static-libc++ builds are byte-identical and locked in engines/reproducibility-lock.json. Complete legal fixture, 100 state cycles, and physical menu-driven GLES3 lifecycle/performance qualification."}, "shipped": false
+    },
+    {
+      "id": "vice-x64sc", "phase": 1, "tier": "1B", "displayName": "VICE x64sc",
+      "systems": ["c64"], "status": "license-blocked", "statusReason": "GPL-2.0-only compatibility must be resolved before combining with Lucent GPL-3.0-only.",
+      "source": {"repository": "https://github.com/libretro/vice-libretro", "commit": "c8c242db75a559246d6d51017e6dd4ecd75d6a9f", "archive": "https://github.com/libretro/vice-libretro/archive/c8c242db75a559246d6d51017e6dd4ecd75d6a9f.tar.gz", "archiveSha256": null, "verifiedAt": "2026-08-06"},
+      "license": {"spdx": "GPL-2.0-only", "distributionGate": "blocked", "auditNote": "Do not bundle until license and ROM-data policy are resolved."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "serialized", "compatibilityVersion": 1, "qualified": false}, "firmware": {"required": false, "acceptedHashes": [], "notes": "JiffyDOS images are optional enhancements, not universal launch requirements."}, "renderer": "software", "build": {"recipe": null, "reproducible": false, "todo": "Resolve license and optional ROM-data policy, hash archive, add recipe, and qualify serialized states."}, "shipped": false
+    },
+    {
+      "id": "bluemsx", "phase": 1, "tier": "1B", "displayName": "blueMSX",
+      "systems": ["msx"], "status": "license-blocked", "statusReason": "Source and bundled machine-database terms require a file-level redistribution audit.",
+      "source": {"repository": "https://github.com/libretro/blueMSX-libretro", "commit": "0f32f52c48d3e772bfdf0379756f81f00b4e08bc", "archive": "https://github.com/libretro/blueMSX-libretro/archive/0f32f52c48d3e772bfdf0379756f81f00b4e08bc.tar.gz", "archiveSha256": null, "verifiedAt": "2026-08-06"},
+      "license": {"spdx": "LicenseRef-blueMSX-Mixed", "distributionGate": "blocked", "auditNote": "Choose a fully redistributable source/data build before bundling."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "serialized", "compatibilityVersion": 1, "qualified": false}, "firmware": {"required": true, "acceptedHashes": [], "notes": "The core requires the blueMSX Databases and Machines data directories."}, "renderer": "software", "build": {"recipe": null, "reproducible": false, "todo": "Complete source/data license audit, firmware/data hashes, archive hash, build recipe, and serialized-state tests."}, "shipped": false
+    },
+    {
+      "id": "o2em", "phase": 1, "tier": "1B", "displayName": "O2EM",
+      "systems": ["odyssey2"], "status": "license-blocked", "statusReason": "Artistic-license compatibility and bundled data must be reviewed before distribution.",
+      "source": {"repository": "https://github.com/libretro/libretro-o2em", "commit": "679d6fec04963f6e70a7ec217e3d0ebb1fe472fc", "archive": "https://github.com/libretro/libretro-o2em/archive/679d6fec04963f6e70a7ec217e3d0ebb1fe472fc.tar.gz", "archiveSha256": null, "verifiedAt": "2026-08-06"},
+      "license": {"spdx": "Artistic-1.0", "distributionGate": "blocked", "auditNote": "Obtain a documented compatibility decision and audit bundled data before shipping."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "basic", "compatibilityVersion": 1, "qualified": false}, "firmware": {"required": true, "acceptedHashes": [], "notes": "A compatible Odyssey2/Videopac BIOS is required."}, "renderer": "software", "build": {"recipe": null, "reproducible": false, "todo": "Resolve license, document BIOS hashes, hash archive, add recipe, and qualify basic states."}, "shipped": false
+    },
+    {
+      "id": "dosbox-pure", "phase": 1, "tier": "1A", "displayName": "DOSBox Pure",
+      "systems": ["dos"], "status": "experimental", "statusReason": "The pinned self-contained source has a configuration-specific compatible-license audit and compiles for Android ARM64 without firmware or guest content. Reproducibility, legal fixture, state, performance, lifecycle, and device qualification remain.",
+      "source": {"repository": "https://github.com/schellingb/dosbox-pure", "commit": "7f6e8fb7385fa446d1444d671063268520bf9b54", "archive": "https://github.com/schellingb/dosbox-pure/archive/7f6e8fb7385fa446d1444d671063268520bf9b54.tar.gz", "archiveSha256": "b413767bf4d61e03c9a779cb0001bcc1bb68c78afbb058fd68d947a9f065f300", "verifiedAt": "2026-08-07"},
+      "license": {"spdx": "GPL-2.0-or-later", "distributionGate": "compatible-candidate", "auditNote": "The pinned Android configuration is audited in engines/audits/dosbox-pure-license.json; GPLv2-or-later is exercised as GPLv3 for the aggregate. Guest OS/game files are never bundled."},
+      "android": {"abis": ["arm64-v8a"], "minApi": 23}, "state": {"capability": "serialized", "compatibilityVersion": 1, "qualified": false}, "firmware": {"required": false, "acceptedHashes": [], "notes": "No core firmware is required; any guest operating-system files remain user-supplied content."}, "renderer": "software", "build": {"recipe": "engines/build_core.sh dosbox-pure", "reproducible": true, "todo": "Two path-isolated NDK builds are byte-identical with linker build IDs disabled. Qualify the redistributable DOS fixture, 100 serialized-state cycles, performance, lifecycle, and physical-device gates before shipping."}, "shipped": false
+    }
+  ]
+}

@@ -1,0 +1,116 @@
+diff --git a/Source/ee/EeExecutor.cpp b/Source/ee/EeExecutor.cpp
+index c8c72f9..a96afbe 100644
+--- a/Source/ee/EeExecutor.cpp
++++ b/Source/ee/EeExecutor.cpp
+@@ -78,8 +78,9 @@ void CEeExecutor::AddExceptionHandler()
+ 	sigAction.sa_sigaction = &HandleException;
+ 	sigAction.sa_flags = SA_SIGINFO;
+ 	sigemptyset(&sigAction.sa_mask);
+-	int result = sigaction(SIGSEGV, &sigAction, nullptr);
++	int result = sigaction(SIGSEGV, &sigAction, &m_previousSigSegvAction);
+ 	assert(result >= 0);
++	m_hasPreviousSigSegvAction = true;
+ #elif defined(__APPLE__) && !TARGET_OS_TV
+ 	if(!m_running)
+ 	{
+@@ -100,6 +101,13 @@ void CEeExecutor::RemoveExceptionHandler()
+ 
+ #if defined(_WIN32)
+ 	RemoveVectoredExceptionHandler(m_handler);
++#elif defined(__unix__) || defined(__ANDROID__)
++	if(m_hasPreviousSigSegvAction)
++	{
++		int result = sigaction(SIGSEGV, &m_previousSigSegvAction, nullptr);
++		assert(result >= 0);
++		m_hasPreviousSigSegvAction = false;
++	}
+ #elif defined(__APPLE__) && !TARGET_OS_TV
+ 	m_running = false;
+ 	m_handlerThread.join();
+@@ -237,7 +245,17 @@ BasicBlockPtr CEeExecutor::BlockFactory(CMIPS& context, uint32 start, uint32 end
+ 
+ bool CEeExecutor::HandleAccessFault(intptr_t ptr)
+ {
++#if defined(__ANDROID__) && defined(__aarch64__)
++	// Android's heap tagging leaves the allocation tag in m_ram while si_addr
++	// is reported untagged. Compare canonical addresses so EE write faults are
++	// recognized instead of being forwarded as process crashes.
++	constexpr uintptr_t ADDRESS_MASK = 0x00FFFFFFFFFFFFFFULL;
++	auto faultAddress = static_cast<uintptr_t>(ptr) & ADDRESS_MASK;
++	auto ramAddress = reinterpret_cast<uintptr_t>(m_ram) & ADDRESS_MASK;
++	ptrdiff_t addr = static_cast<ptrdiff_t>(faultAddress - ramAddress);
++#else
+ 	ptrdiff_t addr = reinterpret_cast<uint8*>(ptr) - m_ram;
++#endif
+ 	if(addr >= 0 && addr < PS2::EE_RAM_SIZE)
+ 	{
+ 		addr &= ~(m_pageSize - 1);
+@@ -294,17 +312,51 @@ LONG CEeExecutor::HandleExceptionInternal(_EXCEPTION_POINTERS* exceptionInfo)
+ 
+ void CEeExecutor::HandleException(int sigId, siginfo_t* sigInfo, void* baseContext)
+ {
+-	g_eeExecutor->HandleExceptionInternal(sigId, sigInfo, baseContext);
++	auto executor = g_eeExecutor;
++	if(executor)
++	{
++		executor->HandleExceptionInternal(sigId, sigInfo, baseContext);
++	}
+ }
+ 
+ void CEeExecutor::HandleExceptionInternal(int sigId, siginfo_t* sigInfo, void* baseContext)
+ {
+-	if(sigId != SIGSEGV) return;
+-	if(HandleAccessFault(reinterpret_cast<intptr_t>(sigInfo->si_addr)))
++	if(sigId == SIGSEGV && sigInfo &&
++	   HandleAccessFault(reinterpret_cast<intptr_t>(sigInfo->si_addr)))
++	{
++		return;
++	}
++
++	// Lucent shares the process with Android Runtime and other native engines.
++	// Preserve the handler that was installed before Play!, and forward faults
++	// outside EE RAM instead of replacing ART's signal chain or forcing SIG_DFL.
++	if(!m_hasPreviousSigSegvAction)
+ 	{
++		signal(sigId, SIG_DFL);
+ 		return;
+ 	}
+-	signal(SIGSEGV, SIG_DFL);
++	auto previous = m_previousSigSegvAction;
++	if(previous.sa_flags & SA_SIGINFO)
++	{
++		if(previous.sa_sigaction && previous.sa_sigaction != &HandleException)
++		{
++			previous.sa_sigaction(sigId, sigInfo, baseContext);
++			return;
++		}
++	}
++	else
++	{
++		if(previous.sa_handler == SIG_IGN) return;
++		if(previous.sa_handler != SIG_DFL && previous.sa_handler != SIG_ERR)
++		{
++			previous.sa_handler(sigId);
++			return;
++		}
++	}
++
++	// Reinstalling the prior default action lets the faulting instruction raise
++	// the original signal again after this handler returns.
++	sigaction(sigId, &previous, nullptr);
+ }
+ 
+ #elif defined(__APPLE__) && !TARGET_OS_TV
+diff --git a/Source/ee/EeExecutor.h b/Source/ee/EeExecutor.h
+index 0e8ab92..e4d6d66 100644
+--- a/Source/ee/EeExecutor.h
++++ b/Source/ee/EeExecutor.h
+@@ -62,6 +62,8 @@ private:
+ #elif defined(__unix__) || defined(__ANDROID__)
+ 	static void HandleException(int, siginfo_t*, void*);
+ 	void HandleExceptionInternal(int, siginfo_t*, void*);
++	struct sigaction m_previousSigSegvAction = {};
++	bool m_hasPreviousSigSegvAction = false;
+ #elif defined(__APPLE__) && !TARGET_OS_TV
+ 	void HandlerThreadProc();
+ 

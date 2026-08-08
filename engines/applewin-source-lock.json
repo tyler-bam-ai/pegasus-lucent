@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-08-07",
+  "buildProfile": "android-arm64-libretro-in-process-software",
+  "closureScope": "exact-pinned-source-plus-external-firmware-integration-patch",
+  "sourceDateEpoch": 1786118400,
+  "core": {
+    "repository": "https://github.com/audetto/AppleWin",
+    "commit": "2045a52d89363005476e670e45df048655edccf7",
+    "archiveSha256": "64f76dc39d7ea9f83f506bfaf7ae8b2c28117feb19a59d224debbd3c04df954b"
+  },
+  "toolchain": {
+    "androidAbi": "arm64-v8a",
+    "androidApi": 23,
+    "ndkVersion": "27.0.12077973",
+    "cmakeVersion": "3.31.6-g38307f9"
+  },
+  "patches": [
+    {
+      "path": "engines/patches/applewin-external-firmware.patch",
+      "sha256": "83c6b91f7af264a6e868a01a1684094a60a85f4441c717f160593b056cce1569"
+    }
+  ],
+  "dependencies": [],
+  "dependencyAuditComplete": false,
+  "firmwarePolicy": {
+    "path": "engines/applewin-firmware-policy.json",
+    "sha256": "126b7613d19df73fc7734fc92809bedfe2c4176fd4e8f6c43b3f007f1f6fa37f"
+  },
+  "artifact": {
+    "sha256": "89d220448e3de1796d176708b9b19ef03d12d64aedd1db1b3a689e9096eb4aae",
+    "firstCleanBuildSha256": "89d220448e3de1796d176708b9b19ef03d12d64aedd1db1b3a689e9096eb4aae",
+    "secondCleanBuildSha256": "89d220448e3de1796d176708b9b19ef03d12d64aedd1db1b3a689e9096eb4aae",
+    "embeddedUpstreamFirmwareByteMatches": 0
+  }
+}

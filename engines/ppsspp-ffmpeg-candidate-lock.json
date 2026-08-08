@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-08-07",
+  "buildProfile": "android-arm64-libretro-ffmpeg",
+  "baseLock": "engines/ppsspp-source-lock.json",
+  "productionProfileReproducibilityProof": {
+    "freshBuildCount": 2,
+    "byteIdentical": true,
+    "artifactSha256": "aec7dba8070f3a3840333ae2eed592ffc06e6f852b21a22c7ab87b0235bfb1fd",
+    "gnuBuildId": "5fac3cb56ae9d8869aafcf673528148582250bf4",
+    "absoluteLucentBuilderPathMatches": 0,
+    "scope": "isolated host compiler/linker and exact FFmpeg-enabled candidate reproducibility; not canonical or shipped"
+  },
+  "ffmpeg": {
+    "repository": "https://github.com/hrydgard/ppsspp-ffmpeg.git",
+    "commit": "1e3b4965632f60b1d85360261d1b9dd45444bc71",
+    "version": "3.0.2",
+    "sparseFileCount": 3381,
+    "sparseClosureSha256": "93b942daa799dedf4f7a1a3f143c081c1945f2a67b7d13717f9fbb5c0ef4dd51",
+    "embeddedConfiguration": {
+      "sha256WithTrailingNewline": "0446f0f71d2552a237a302791bfe54c20c62b128415bd8a9ccfb04bf8f8d1253",
+      "gplEnabled": false,
+      "nonfreeEnabled": false,
+      "version3Enabled": false,
+      "androidApi": 21,
+      "upstreamBuilderNdk": "29.0.14206865"
+    },
+    "androidArm64Archives": [
+      {"path":"android/arm64/lib/libavcodec.a","sha256":"12932e1719efb45ce1298841b3f65b7e99fff07cad8f7403efba4a7fdcf1948d","memberCount":158},
+      {"path":"android/arm64/lib/libavformat.a","sha256":"d00ec5483c7049032c86a3d293dc23d3440b454eb93c8e7e6662481821ba5b60","memberCount":40},
+      {"path":"android/arm64/lib/libavutil.a","sha256":"876e4c820646f5de1de63fcc6f362c57049de9837bc00d05b12dc6a57954ccca","memberCount":68},
+      {"path":"android/arm64/lib/libswresample.a","sha256":"d5480c4b18b4fc1aeb537af8934ddae52e167e5b8b6bdec8f67176beebced162","memberCount":10},
+      {"path":"android/arm64/lib/libswscale.a","sha256":"7cfc492242f0ddccdc7a9cd60fe5809070a41b719c7c0d98132e15d31d07e03c","memberCount":14}
+    ],
+    "licenseConcluded": "LGPL-2.1-or-later AND IJG",
+    "licenseEvidence": [
+      {"path":"LICENSE.md","sha256":"2e06d5375e3ec10363d38f4ba0680d311ff4f2024ee7f9ddb1c7a2e2bb8a5585"},
+      {"path":"COPYING.LGPLv2.1","sha256":"b634ab5640e258563c536e658cad87080553df6f34f62269a21d554844e58bfe"},
+      {"path":"android_arm64-v8a.sh","sha256":"3a7cf907f16606d16ad727ec0737d7a2ec01434ccc09cc3a96763fe37c632ebd"}
+    ]
+  }
+}

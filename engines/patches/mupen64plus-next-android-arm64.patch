@@ -1,0 +1,41 @@
+diff --git a/Makefile b/Makefile
+index 2443f80..b5cd3f2 100644
+--- a/Makefile
++++ b/Makefile
+@@ -513,9 +513,13 @@ else ifneq (,$(findstring tvos,$(platform)))
+ # Android
+ else ifneq (,$(findstring android,$(platform)))
+    ANDROID = 1
++   ANDROID_GRAPHIC_BUFFER ?= 1
+    LDFLAGS += -shared -Wl,--version-script=$(LIBRETRO_DIR)/link.T -Wl,--no-undefined -Wl,--warn-common -llog
+    INCFLAGS += -I$(ROOT_DIR)/GLideN64/src/GLideNHQ/inc
+-   ifneq (,$(findstring x86,$(platform)))
++   ifneq (,$(findstring arm64,$(platform)))
++      WITH_DYNAREC = aarch64
++      CPUFLAGS += -march=armv8-a
++   else ifneq (,$(findstring x86,$(platform)))
+       CC = i686-linux-android-gcc
+       CXX = i686-linux-android-g++
+       WITH_DYNAREC = x86
+diff --git a/Makefile.common b/Makefile.common
+index 72aef3a..d7dc767 100644
+--- a/Makefile.common
++++ b/Makefile.common
+@@ -498,7 +498,7 @@ ifeq ($(GLES3),1)
+ 	endif
+ 	LDFLAGS += $(EGL_LIB)
+ 	SOURCES_C += $(LIBRETRO_COMM_DIR)/glsym/glsym_es3.c
+-	ifeq ($(ANDROID),1)
++	ifeq ($(ANDROID_GRAPHIC_BUFFER),1)
+ 		SOURCES_CXX += $(VIDEODIR_GLIDEN64)/src/Graphics/OpenGLContext/GraphicBuffer/GraphicBufferWrapper.cpp \
+ 		               $(VIDEODIR_GLIDEN64)/src/Graphics/OpenGLContext/GraphicBuffer/PublicApi/android_hardware_buffer_compat.cpp
+ 	endif
+@@ -507,7 +507,7 @@ else ifeq ($(GLES),1)
+ 	LDFLAGS += $(EGL_LIB)
+ 	SOURCES_C += $(LIBRETRO_COMM_DIR)/glsym/glsym_es2.c
+ 
+-	ifeq ($(ANDROID),1)
++	ifeq ($(ANDROID_GRAPHIC_BUFFER),1)
+ 		SOURCES_CXX += $(VIDEODIR_GLIDEN64)/src/Graphics/OpenGLContext/GraphicBuffer/GraphicBufferWrapper.cpp \
+ 		               $(VIDEODIR_GLIDEN64)/src/Graphics/OpenGLContext/GraphicBuffer/PublicApi/android_hardware_buffer_compat.cpp
+ 	endif

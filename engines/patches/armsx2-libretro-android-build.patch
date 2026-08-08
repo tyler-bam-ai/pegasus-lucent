@@ -1,0 +1,143 @@
+diff --git a/pcsx2-libretro/AndroidLibretroStubs.cpp b/pcsx2-libretro/AndroidLibretroStubs.cpp
+new file mode 100644
+index 000000000..0206974e0
+--- /dev/null
++++ b/pcsx2-libretro/AndroidLibretroStubs.cpp
+@@ -0,0 +1,24 @@
++// SPDX-License-Identifier: GPL-3.0+
++// The Lucent libretro host uses app-private filesystem paths and supplies
++// controller haptics itself.  These Android application-frontend hooks are
++// therefore intentionally unavailable in the in-process core.
++
++#include "common/FileSystem.h"
++#include "common/HostSys.h"
++
++namespace FileSystem
++{
++int OpenFDFileContent(const char*) { return -1; }
++bool CreateDirectoryViaJava(const char*) { return false; }
++bool CreateFileViaJava(const char*) { return false; }
++}
++
++namespace Native
++{
++void onPadRumble(int, int, int) {}
++}
++
++namespace Common
++{
++bool PlaySoundAsync(const char*) { return false; }
++}
+diff --git a/pcsx2-libretro/CMakeLists.txt b/pcsx2-libretro/CMakeLists.txt
+index 443dbfb9e..d7adf523d 100644
+--- a/pcsx2-libretro/CMakeLists.txt
++++ b/pcsx2-libretro/CMakeLists.txt
+@@ -14,6 +14,7 @@ endif()
+ 
+ target_sources(pcsx2-libretro PRIVATE
+ 	Main.cpp
++	AndroidLibretroStubs.cpp
+ )
+ 
+ target_include_directories(pcsx2-libretro PRIVATE
+@@ -26,6 +27,7 @@ target_link_libraries(pcsx2-libretro PRIVATE
+ 	PCSX2_FLAGS
+ 	PCSX2
+ 	libretro-headers
++	shaderc_combined
+ )
+ 
+ # A shared core must be fully position-independent — the pcsx2-sdl ET_EXEC
+diff --git a/pcsx2-libretro/Main.cpp b/pcsx2-libretro/Main.cpp
+index bd0babee9..d20d8e7cf 100644
+--- a/pcsx2-libretro/Main.cpp
++++ b/pcsx2-libretro/Main.cpp
+@@ -337,9 +337,11 @@ void Host::SetMouseMode(bool relative_mode, bool hide_cursor)
+ {
+ }
+ 
++#if !defined(ANDROID)
+ void Host::SetMouseLock(bool state)
+ {
+ }
++#endif
+ 
+ std::optional<WindowInfo> Host::AcquireRenderWindow(bool recreate_window)
+ {
+@@ -601,8 +603,10 @@ const char* InputManager::ConvertHostKeyboardCodeToIcon(u32 code)
+ 	return nullptr;
+ }
+ 
++#if !defined(ANDROID)
+ BEGIN_HOTKEY_LIST(g_host_hotkeys)
+ END_HOTKEY_LIST()
++#endif
+ 
+ //////////////////////////////////////////////////////////////////////////
+ // CPU thread
+@@ -1763,7 +1767,10 @@ RETRO_API bool retro_serialize(void* data, size_t size)
+ 		}
+ 		ok = SaveState_ZipToBuffer(std::move(elist), SaveState_SaveScreenshot(), &buffer, &error);
+ 		if (!ok)
++		{
+ 			Console.ErrorFmt("retro_serialize: ZipToBuffer failed: {}", error.GetDescription());
++			log_cb(RETRO_LOG_ERROR, "retro_serialize: ZipToBuffer failed: %s\n", error.GetDescription().c_str());
++		}
+ 	}, true);
+ 
+ 	if (LibretroCore::s_context_ready.load(std::memory_order_acquire))
+@@ -1788,12 +1795,20 @@ RETRO_API bool retro_serialize(void* data, size_t size)
+ RETRO_API bool retro_unserialize(const void* data, size_t size)
+ {
+ 	if (!VMManager::HasValidVM() || size < sizeof(u64))
++	{
++		log_cb(RETRO_LOG_ERROR, "retro_unserialize precondition failed: vm=%d size=%zu\n",
++			VMManager::HasValidVM() ? 1 : 0, size);
+ 		return false;
++	}
+ 
+ 	u64 zip_size;
+ 	std::memcpy(&zip_size, data, sizeof(u64));
+ 	if (zip_size == 0 || zip_size > size - sizeof(u64))
++	{
++		log_cb(RETRO_LOG_ERROR, "retro_unserialize length failed: zip=%llu size=%zu\n",
++			static_cast<unsigned long long>(zip_size), size);
+ 		return false;
++	}
+ 
+ 	VKLibretro::SetPacing(false);
+ 
+@@ -1805,7 +1820,10 @@ RETRO_API bool retro_unserialize(const void* data, size_t size)
+ 		Error error;
+ 		ok = SaveState_UnzipFromBuffer(zip_data, static_cast<size_t>(zip_size), &error);
+ 		if (!ok)
++		{
+ 			Console.ErrorFmt("retro_unserialize failed: {}", error.GetDescription());
++			log_cb(RETRO_LOG_ERROR, "retro_unserialize failed: %s\n", error.GetDescription().c_str());
++		}
+ 	}, true);
+ 
+ 	if (LibretroCore::s_context_ready.load(std::memory_order_acquire))
+diff --git a/platforms/android/app/src/main/cpp/CMakeLists.txt b/platforms/android/app/src/main/cpp/CMakeLists.txt
+index 6cb51d8b4..7fe816767 100644
+--- a/platforms/android/app/src/main/cpp/CMakeLists.txt
++++ b/platforms/android/app/src/main/cpp/CMakeLists.txt
+@@ -17,6 +17,10 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
+ 
+ project(ARMSX2Android C CXX)
+ 
++# Expose Android WSI declarations (for example
++# PFN_vkCreateAndroidSurfaceKHR) from the vendored Vulkan headers.
++add_compile_definitions(VK_USE_PLATFORM_ANDROID_KHR)
++
+ # Absolute path to the repository root (the single source of truth for the core).
+ get_filename_component(ARMSX2_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../.." ABSOLUTE)
+ 
+@@ -63,6 +67,7 @@ add_subdirectory("${ARMSX2_ROOT}/common"   "${CMAKE_BINARY_DIR}/common")
+ # raw linker flag, so a missing definition surfaces only as a compile error.
+ add_subdirectory("${ARMSX2_ROOT}/3rdparty/libretro" "${CMAKE_BINARY_DIR}/3rdparty/libretro")
+ add_subdirectory("${ARMSX2_ROOT}/pcsx2"    "${CMAKE_BINARY_DIR}/pcsx2")
++add_subdirectory("${ARMSX2_ROOT}/pcsx2-libretro" "${CMAKE_BINARY_DIR}/pcsx2-libretro")
+ 
+ # Android-only 3rdparty: libadrenotools (custom Vulkan ICD loading for Adreno).
+ # Provides the static `adrenotools` lib linked into emucore plus runtime hook

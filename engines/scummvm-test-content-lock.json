@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Opt-in Android qualification fixture; never bundled in Lucent artifacts",
+  "fixtures": [
+    {
+      "title": "Flight of the Amazon Queen - Freeware Floppy Version",
+      "engine": "queen",
+      "sourcePage": "https://www.scummvm.org/games/#games-queen:queen",
+      "url": "https://downloads.scummvm.org/frs/extras/Flight%20of%20the%20Amazon%20Queen/FOTAQ_Floppy.zip",
+      "sha256": "2e59de85f708cdb32bf85c85b394ac091c05f7647e856b71f5b3ae73fde761e0",
+      "upstreamLabel": "Freeware Floppy Version",
+      "distributionPolicy": "official-download-only",
+      "bundleInApk": false,
+      "notes": "Download directly from ScummVM for qualification. The freeware label supports testing; this lock does not assert third-party redistribution rights."
+    }
+  ]
+}

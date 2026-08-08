@@ -1,0 +1,190 @@
+diff --git a/resource/CMakeLists.txt b/resource/CMakeLists.txt
+index d8dfa45d..6cc18f1e 100644
+--- a/resource/CMakeLists.txt
++++ b/resource/CMakeLists.txt
+@@ -1,35 +1,6 @@
+ include(CMakeResources.cmake)
+ 
+ add_resources(source_files apple2roms
+-  IDR_DISK2_13SECTOR_FW               "DISK2-13sector.rom"
+-  IDR_DISK2_16SECTOR_FW               "DISK2.rom"
+-  IDR_SSC_FW                          "SSC.rom"
+-  IDR_HDDRVR_FW                       "Hddrvr.bin"
+-  IDR_HDDRVR_V2_FW                    "Hddrvr-v2.bin"
+-  IDR_HDC_SMARTPORT_FW                "HDC-SmartPort.bin"
+-  IDR_PRINTDRVR_FW                    "Parallel.rom"
+-  IDR_MOCKINGBOARD_D_FW               "Mockingboard-D.rom"
+-  IDR_MOUSEINTERFACE_FW               "MouseInterface.rom"
+-  IDR_THUNDERCLOCKPLUS_FW             "ThunderClockPlus.rom"
+-  IDR_TKCLOCK_FW                      "TKClock.rom"
+-
+-  IDR_APPLE2_ROM                      "Apple2.rom"
+-  IDR_APPLE2_PLUS_ROM                 "Apple2_Plus.rom"
+-  IDR_APPLE2_JPLUS_ROM                "Apple2_JPlus.rom"
+-  IDR_APPLE2E_ROM                     "Apple2e.rom"
+-  IDR_APPLE2E_ENHANCED_ROM            "Apple2e_Enhanced.rom"
+-  IDR_PRAVETS_82_ROM                  "PRAVETS82.ROM"
+-  IDR_PRAVETS_8M_ROM                  "PRAVETS8M.ROM"
+-  IDR_PRAVETS_8C_ROM                  "PRAVETS8C.ROM"
+-  IDR_TK3000_2E_ROM                   "TK3000e.rom"
+-  IDR_BASE_64A_ROM                    "Base64A.rom"
+-  IDR_FREEZES_F8_ROM                  "Freezes_Non-autostart_F8_Rom.rom"
+-
+-  IDR_APPLE2_VIDEO_ROM                "Apple2_Video.rom"
+-  IDR_APPLE2_JPLUS_VIDEO_ROM          "Apple2_JPlus_Video.rom"
+-  IDR_APPLE2E_ENHANCED_VIDEO_ROM      "Apple2e_Enhanced_Video.rom"
+-  IDR_BASE64A_VIDEO_ROM               "Base64A_German_Video.rom"
+-
+   IDB_CHARSET82                       "CHARSET82.bmp"
+   IDB_CHARSET8M                       "CHARSET8M.bmp"
+   IDB_CHARSET8C                       "CHARSET8C.bmp"
+diff --git a/source/frontends/libretro/environment.cpp b/source/frontends/libretro/environment.cpp
+index 4533444c..3f57fc68 100644
+--- a/source/frontends/libretro/environment.cpp
++++ b/source/frontends/libretro/environment.cpp
+@@ -6,6 +6,7 @@ namespace ra2
+ {
+ 
+     std::string save_directory;
++    std::string system_directory;
+ 
+     void fallback_log(enum retro_log_level level, const char *fmt, ...)
+     {
+diff --git a/source/frontends/libretro/environment.h b/source/frontends/libretro/environment.h
+index fdc93158..fa29cceb 100644
+--- a/source/frontends/libretro/environment.h
++++ b/source/frontends/libretro/environment.h
+@@ -17,6 +17,7 @@ namespace ra2
+     extern retro_audio_sample_batch_t audio_batch_cb;
+ 
+     extern std::string save_directory;
++    extern std::string system_directory;
+ 
+ #define MAX_PADS 2
+ 
+diff --git a/source/frontends/libretro/libretro.cpp b/source/frontends/libretro/libretro.cpp
+index 3ad8d935..1850312c 100644
+--- a/source/frontends/libretro/libretro.cpp
++++ b/source/frontends/libretro/libretro.cpp
+@@ -238,6 +238,12 @@ void retro_set_environment(retro_environment_t cb)
+         ra2::save_directory = saveDirectory;
+     }
+ 
++    const char *systemDirectory = nullptr;
++    if (cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &systemDirectory) && systemDirectory)
++    {
++        ra2::system_directory = systemDirectory;
++    }
++
+     unsigned dciVersion = 0;
+     if (cb(RETRO_ENVIRONMENT_GET_DISK_CONTROL_INTERFACE_VERSION, &dciVersion) && (dciVersion >= 1))
+     {
+diff --git a/source/frontends/libretro/retroframe.cpp b/source/frontends/libretro/retroframe.cpp
+index d9dcfd21..cb945f50 100644
+--- a/source/frontends/libretro/retroframe.cpp
++++ b/source/frontends/libretro/retroframe.cpp
+@@ -6,10 +6,15 @@
+ #include "frontends/common2/utils.h"
+ 
+ #include "Interface.h"
++#include "../../../resource/resource.h"
+ #include "Core.h"
+ #include "Utilities.h"
+ #include "Memory.h"
+ 
++#include <filesystem>
++#include <fstream>
++#include <map>
++
+ namespace ra2
+ {
+ 
+@@ -17,6 +22,63 @@ namespace ra2
+         , myLinePeriod(linePeriod)
+     {
+     }
++
++    std::pair<const unsigned char *, unsigned int> RetroFrame::GetResourceData(WORD id) const
++    {
++        static const std::map<WORD, const char *> externalFirmware = {
++            {IDR_DISK2_13SECTOR_FW, "DISK2-13sector.rom"},
++            {IDR_DISK2_16SECTOR_FW, "DISK2.rom"},
++            {IDR_SSC_FW, "SSC.rom"},
++            {IDR_HDDRVR_FW, "Hddrvr.bin"},
++            {IDR_HDDRVR_V2_FW, "Hddrvr-v2.bin"},
++            {IDR_HDC_SMARTPORT_FW, "HDC-SmartPort.bin"},
++            {IDR_PRINTDRVR_FW, "Parallel.rom"},
++            {IDR_MOCKINGBOARD_D_FW, "Mockingboard-D.rom"},
++            {IDR_MOUSEINTERFACE_FW, "MouseInterface.rom"},
++            {IDR_THUNDERCLOCKPLUS_FW, "ThunderClockPlus.rom"},
++            {IDR_TKCLOCK_FW, "TKClock.rom"},
++            {IDR_APPLE2_ROM, "Apple2.rom"},
++            {IDR_APPLE2_PLUS_ROM, "Apple2_Plus.rom"},
++            {IDR_APPLE2_JPLUS_ROM, "Apple2_JPlus.rom"},
++            {IDR_APPLE2E_ROM, "Apple2e.rom"},
++            {IDR_APPLE2E_ENHANCED_ROM, "Apple2e_Enhanced.rom"},
++            {IDR_PRAVETS_82_ROM, "PRAVETS82.ROM"},
++            {IDR_PRAVETS_8M_ROM, "PRAVETS8M.ROM"},
++            {IDR_PRAVETS_8C_ROM, "PRAVETS8C.ROM"},
++            {IDR_TK3000_2E_ROM, "TK3000e.rom"},
++            {IDR_BASE_64A_ROM, "Base64A.rom"},
++            {IDR_FREEZES_F8_ROM, "Freezes_Non-autostart_F8_Rom.rom"},
++            {IDR_APPLE2_VIDEO_ROM, "Apple2_Video.rom"},
++            {IDR_APPLE2_JPLUS_VIDEO_ROM, "Apple2_JPlus_Video.rom"},
++            {IDR_APPLE2E_ENHANCED_VIDEO_ROM, "Apple2e_Enhanced_Video.rom"},
++            {IDR_BASE64A_VIDEO_ROM, "Base64A_German_Video.rom"},
++        };
++        const auto filename = externalFirmware.find(id);
++        if (filename == externalFirmware.end())
++            return common2::GNUFrame::GetResourceData(id);
++        const auto cached = myExternalFirmware.find(id);
++        if (cached != myExternalFirmware.end())
++            return {cached->second.data(), static_cast<unsigned int>(cached->second.size())};
++        if (system_directory.empty())
++            throw std::runtime_error("AppleWin system directory is unavailable");
++        const std::filesystem::path path = std::filesystem::path(system_directory) / filename->second;
++        std::ifstream input(path, std::ios::binary | std::ios::ate);
++        if (!input)
++            throw std::runtime_error("Required external AppleWin firmware is unavailable: " +
++                                     std::string(filename->second));
++        const std::streamsize size = input.tellg();
++        if (size <= 0 || size > static_cast<std::streamsize>(UINT32_MAX))
++            throw std::runtime_error("Invalid external AppleWin firmware size: " +
++                                     std::string(filename->second));
++        input.seekg(0, std::ios::beg);
++        std::vector<unsigned char> bytes(static_cast<size_t>(size));
++        if (!input.read(reinterpret_cast<char *>(bytes.data()), size))
++            throw std::runtime_error("Cannot read external AppleWin firmware: " +
++                                     std::string(filename->second));
++        const auto inserted = myExternalFirmware.emplace(id, std::move(bytes));
++        return {inserted.first->second.data(),
++                static_cast<unsigned int>(inserted.first->second.size())};
++    }
+ 
+     void RetroFrame::FrameRefreshStatus(int drawflags)
+     {
+diff --git a/source/frontends/libretro/retroframe.h b/source/frontends/libretro/retroframe.h
+index b4f76953..5daa9593 100644
+--- a/source/frontends/libretro/retroframe.h
++++ b/source/frontends/libretro/retroframe.h
+@@ -2,6 +2,7 @@
+ 
+ #include "frontends/common2/gnuframe.h"
+ 
++#include <map>
+ #include <vector>
+ 
+ namespace ra2
+@@ -31,9 +32,12 @@ namespace ra2
+         virtual bool CanDoFullSpeed() override;
+ 
+     private:
++        std::pair<const unsigned char *, unsigned int> GetResourceData(WORD id) const override;
++
+         const size_t myLinePeriod;
+ 
+         std::vector<uint8_t> myVideoBuffer;
++        mutable std::map<WORD, std::vector<unsigned char>> myExternalFirmware;
+ 
+         size_t myPitch = 0;
+         size_t myOffset = 0;

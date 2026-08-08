@@ -1,0 +1,21 @@
+diff --git a/Source/PS2VM.cpp b/Source/PS2VM.cpp
+--- a/Source/PS2VM.cpp
++++ b/Source/PS2VM.cpp
+@@ -900,7 +900,7 @@ void CPS2VM::EmuThread()
+ 	fesetround(FE_TOWARDZERO);
+ 	FpUtils::SetDenormalHandlingMode();
+ 	CProfiler::GetInstance().SetWorkThread();
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) && !defined(LUCENT_LIBRETRO)
+ 	JNIEnv* env = nullptr;
+ 	Framework::CJavaVM::AttachCurrentThread(&env, THREAD_NAME);
+ #endif
+@@ -1008,7 +1008,7 @@ void CPS2VM::EmuThread()
+ 		}
+ 	}
+ 	static_cast<CEeExecutor*>(m_ee->m_EE.m_executor.get())->RemoveExceptionHandler();
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) && !defined(LUCENT_LIBRETRO)
+ 	Framework::CJavaVM::DetachCurrentThread();
+ #endif
+ }

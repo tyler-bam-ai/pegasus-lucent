@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-08-07",
+  "buildProfile": "android-arm64-libretro-vulkan-no-ui",
+  "closureScope": "exact-source-archive-shaderc-deps-and-locked-integration-patch",
+  "sourceDateEpoch": 1786094134,
+  "toolchain": {
+    "androidAbi": "arm64-v8a",
+    "androidApi": 26,
+    "ndkVersion": "27.0.12077973",
+    "ndkSourcePropertiesSha256": "1c4a54b31c5ed242a901b4a472d412819b5e08405df1c58066bd555f9dd52515",
+    "cmakeVersion": "3.31.6-g38307f9",
+    "cmakeExecutableSha256": "94d4a3ce9e70cd9dae26e5fc7bb6ff4de67c58759762d4118a96ad2bc1b76be8",
+    "ninjaVersion": "1.12.1",
+    "ninjaExecutableSha256": "3d508e91d5c159986bea2a472b1bfa849909da133aa05582a7174d33328af933"
+  },
+  "core": {
+    "repository": "https://github.com/ARMSX2/ARMSX2",
+    "commit": "788a59d641c777cb7f70726ea573d420508e0931",
+    "archiveSha256": "bc2bb2f106ca499252e3bfe0a40366de5e9749fd84bebbbe80ed52c4b07abf63"
+  },
+  "patches": [
+    {
+      "path": "engines/patches/armsx2-libretro-android-build.patch",
+      "sha256": "f8d1f6c46125ab953c9333eb57400a8f4ff339ea91ebc3221ab8638514bded78"
+    }
+  ],
+  "dependencies": [
+    {"path": "platforms/android/app/src/main/cpp/3rdparty/shaderc/third_party/abseil_cpp", "repository": "https://github.com/abseil/abseil-cpp", "commit": "1315c900e1ddbb08a23e06eeb9a06450052ccb5e", "archiveSha256": "4ae9fc64860d5204f0ca6bd6c7a5f8e59ced118494db7e14537d8ed55dce5715", "licenseDeclared": "Apache-2.0"},
+    {"path": "platforms/android/app/src/main/cpp/3rdparty/shaderc/third_party/effcee", "repository": "https://github.com/google/effcee", "commit": "08da24ec245a274fea3a128ba50068f163390565", "archiveSha256": "d6d6b602f1b6f09d3a83c44a067d087c23fdc3d3530e2e5dd27be2adda91fe4d", "licenseDeclared": "Apache-2.0"},
+    {"path": "platforms/android/app/src/main/cpp/3rdparty/shaderc/third_party/glslang", "repository": "https://github.com/KhronosGroup/glslang", "commit": "09c541ee5b22bbac307987b50d86ec2b4f683d75", "archiveSha256": "e8dbf161cb49ae882076455d2146fff699b90caa092bcb65938a6cd4bc46ea10", "licenseDeclared": "BSD-3-Clause"},
+    {"path": "platforms/android/app/src/main/cpp/3rdparty/shaderc/third_party/googletest", "repository": "https://github.com/google/googletest", "commit": "1d17ea141d2c11b8917d2c7d029f1c4e2b9769b2", "archiveSha256": "7aca173cc96c0feaa01035184e34b020daaa93ddc132c5a829b7ea34006f701b", "licenseDeclared": "BSD-3-Clause"},
+    {"path": "platforms/android/app/src/main/cpp/3rdparty/shaderc/third_party/re2", "repository": "https://github.com/google/re2", "commit": "4a8cee3dd3c3d81b6fe8b867811e193d5819df07", "archiveSha256": "f0a65168e64a10ab556b265f2f411678e6b9555f21e04202f84f250b659954ba", "licenseDeclared": "BSD-3-Clause"},
+    {"path": "platforms/android/app/src/main/cpp/3rdparty/shaderc/third_party/spirv-headers", "repository": "https://github.com/KhronosGroup/SPIRV-Headers", "commit": "465055f6c9128772e20082e893d974146acf7a02", "archiveSha256": "fddd1edaea6e436970efa9a06cdc43f0522b37ba7edfbf042ab076b5ea53527b", "licenseDeclared": "MIT"},
+    {"path": "platforms/android/app/src/main/cpp/3rdparty/shaderc/third_party/spirv-tools", "repository": "https://github.com/KhronosGroup/SPIRV-Tools", "commit": "e4bceacf59fdfe742047e94e41ef65a48999a0dd", "archiveSha256": "92d1ba1042df2a2dcaa1946d12751c18c7c0e6bc71618dc9988ede838c13021e", "licenseDeclared": "Apache-2.0"}
+  ]
+}

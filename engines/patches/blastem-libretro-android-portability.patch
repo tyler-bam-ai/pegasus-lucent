@@ -1,0 +1,125 @@
+diff --git a/paths.c b/paths.c
+index 98730c8..693c39e 100644
+--- a/paths.c
++++ b/paths.c
+@@ -13,7 +13,7 @@
+ #include <unistd.h>
+ #include <errno.h>
+ #endif
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) && !defined(IS_LIB)
+ #include <SDL_system.h>
+ #include <jni.h>
+ #endif
+@@ -45,7 +45,7 @@ static void persist_path(void)
+ 	free(pathfname);
+ }
+ 
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) && !defined(IS_LIB)
+ static char *get_external_storage_path()
+ {
+ 	static char *ret;
+@@ -82,7 +82,7 @@ cleanup:
+ uint8_t get_initial_browse_path(char **dst)
+ {
+ 	char *base = NULL;
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) && !defined(IS_LIB)
+ 	static const char activity_class_name[] = "com/retrodev/blastem/BlastEmActivity";
+ 	static const char get_rom_path_name[] = "getRomPath";
+ 	JNIEnv *env = SDL_AndroidGetJNIEnv();
+@@ -143,7 +143,7 @@ uint8_t get_initial_browse_path(char **dst)
+ 	}
+ #endif
+ 	if (!base){
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) && !defined(IS_LIB)
+ 		
+ 		base = get_external_storage_path();
+ #else
+@@ -486,7 +486,7 @@ fallback:
+ 	return exe_dir;
+ }
+ 
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) && !defined(IS_LIB)
+ #include <SDL.h>
+ 
+ char const *get_config_dir()
+diff --git a/system.c b/system.c
+index 6b67f03..99ec8e9 100644
+--- a/system.c
++++ b/system.c
+@@ -20,7 +20,7 @@
+ 
+ #ifdef DISABLE_ZLIB
+ #define ROMFILE FILE*
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) && !defined(IS_LIB)
+ #define romopen fopen_wrapper
+ #else
+ #define romopen fopen
+@@ -32,7 +32,7 @@
+ #else
+ #include "zlib/zlib.h"
+ #define ROMFILE gzFile
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) && !defined(IS_LIB)
+ #define romopen gzopen_wrapper
+ gzFile gzopen_wrapper(const char *path, const char *mode);
+ #else
+@@ -523,7 +523,7 @@ end:
+ 
+ #ifndef DISABLE_ZLIB
+ 
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) && !defined(IS_LIB)
+ gzFile gzopen_wrapper(const char *path, const char *mode)
+ {
+ 	if (startswith(path, "content://")) {
+diff --git a/util.c b/util.c
+index 09efac7..4b45d0a 100644
+--- a/util.c
++++ b/util.c
+@@ -8,7 +8,7 @@
+ #include <sys/stat.h>
+ #include <errno.h>
+ 
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) && !defined(IS_LIB)
+ #include <android/log.h>
+ #include <SDL_system.h>
+ #include <jni.h>
+@@ -894,7 +894,7 @@ char *fgets_timeout(char *dst, size_t size, FILE *f, uint64_t timeout_usec, void
+ 
+ #include <dirent.h>
+ 
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) && !defined(IS_LIB)
+ static dir_entry *jdir_list_helper(JNIEnv *env, jmethodID meth, char *path, size_t *numret)
+ {
+ 	jstring jpath = (*env)->NewStringUTF(env, path);
+@@ -933,7 +933,7 @@ static dir_entry *jdir_list_helper(JNIEnv *env, jmethodID meth, char *path, size
+ 
+ dir_entry *get_dir_list(char *path, size_t *numret)
+ {
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) && !defined(IS_LIB)
+ 	debug_message("get_dir_list(%s)\n", path);
+ 	if (startswith(path, "content://")) {
+ 		static const char activity_class_name[] = "com/retrodev/blastem/BlastEmActivity";
+diff --git a/Makefile b/Makefile
+index e0d67a6..660f30f 100644
+--- a/Makefile
++++ b/Makefile
+@@ -447,6 +447,10 @@ $(LIBOBJDIR)/%.o : %.S | $(LIBORDERONLY)
+ 	$(CC) -c -MMD -o $@ $<
+ 
++# z80.c is a multi-megabyte generated translation unit. O1 avoids a roughly
++# twenty-minute O2 compile while leaving every other runtime unit at O2.
++$(LIBOBJDIR)/z80.o: LIBCFLAGS += -O1
++
+ $(LIBOBJDIR)/%.o : %.c | $(LIBORDERONLY)
+ 	$(CC) $(LIBCFLAGS) -c -MMD -o $@ $<
+ 

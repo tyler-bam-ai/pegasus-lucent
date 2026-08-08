@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "engineId": "beetle-cygne",
+  "sourceCommit": "4b01295838ea89e3f1355bbe4cb5cf98aa6108cd",
+  "sourceArchiveSha256": "bce15c0e2505e15b7b55fa1d51b4a12219d07a67be62bbca5c26678d0d89c659",
+  "scope": "Configuration-specific audit of the files selected by the pinned Android ARM64 software build. No game, firmware, or prebuilt dependency is included. This engineering record is not legal advice.",
+  "aggregateConclusion": "GPL-3.0-compatible candidate through the GPL-2.0-or-later option; the permissive V30MZ component additionally requires author credit. Complete release notice and corresponding-source review remains.",
+  "components": [
+    {
+      "paths": ["COPYING", "libretro.cpp", "mednafen/**"],
+      "license": "GPL-2.0-or-later",
+      "evidence": "The project license and selected emulator source notices grant GPL version 2 or, at the recipient's option, any later version."
+    },
+    {
+      "paths": ["mednafen/wswan/v30mz.*"],
+      "license": "LicenseRef-V30MZ-Permissive",
+      "evidence": "Bryan McPhail's V30MZ notice permits commercial and non-commercial use and modification while requiring credit to the author."
+    },
+    {
+      "paths": ["libretro-common/**"],
+      "license": "MIT",
+      "evidence": "Selected libretro-common files carry the MIT permission and notice text."
+    }
+  ],
+  "requiredAttribution": "V30MZ CPU core by Bryan McPhail.",
+  "remainingReleaseGates": [
+    "Carry the V30MZ author credit in every qualification package and complete release-notice review.",
+    "Qualify redistributable WonderSwan and WonderSwan Color visible-output fixtures plus audio and input callbacks.",
+    "Prove repeated serialized-state cycles, lifecycle, performance, controls, orientation, and physical-device behavior."
+  ]
+}

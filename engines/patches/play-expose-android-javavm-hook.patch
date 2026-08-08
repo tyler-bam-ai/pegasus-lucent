@@ -1,0 +1,31 @@
+diff --git a/Source/ui_libretro/main_libretro.cpp b/Source/ui_libretro/main_libretro.cpp
+index 1eb8a54..f1b1081 100644
+--- a/Source/ui_libretro/main_libretro.cpp
++++ b/Source/ui_libretro/main_libretro.cpp
+@@ -17,6 +17,10 @@
+ #include <vector>
+ #include <cstdlib>
+ 
++#if defined(__ANDROID__)
++#include "android/JavaVM.h"
++#endif
++
+ #define LOG_NAME "LIBRETRO"
+ 
+ static CPS2VM* m_virtualMachine = nullptr;
+@@ -42,6 +46,15 @@ bool g_forceBilinearTextures = false;
+ 		{NULL, NULL},
+ };
+ 
++#if defined(__ANDROID__)
++// Libretro frontends load cores with dlopen, so Android does not invoke the
++// application JNI_OnLoad entry point that normally initializes Play!'s VM.
++extern "C" __attribute__((visibility("default"))) void lucent_set_android_java_vm(JavaVM* vm)
++{
++	Framework::CJavaVM::SetJavaVM(vm);
++}
++#endif
++
+ enum class BootType
+ {
+ 	CD,

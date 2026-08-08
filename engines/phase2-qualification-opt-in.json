@@ -1,0 +1,165 @@
+{
+  "schemaVersion": 1,
+  "qualificationOnly": true,
+  "autoSelect": false,
+  "engines": [
+    {
+      "id": "applewin",
+      "commit": "2045a52d89363005476e670e45df048655edccf7",
+      "libraryName": "liblucent_core_applewin.so",
+      "runtime": "gles-libretro",
+      "firmwareProfiles": [
+        {
+          "system": "apple2",
+          "mode": "user-files",
+          "alternatives": [
+            [
+              {"destination": "Apple2e_Enhanced.rom", "size": 16384, "md5": "38063e08c778503fc03ecebb979769e9", "sha256": "aab38a03ca8deabbb2f868733148c2efd6f655a59cd9c5d058ef3e0b7aa86a1a"},
+              {"destination": "Apple2e_Enhanced_Video.rom", "size": 4096, "md5": "9123fff3442c0e688cc6816be88dd4ab", "sha256": "52c3b87900ac939f6525402cab1ccfd8f8259290fc6df54da48fb4c98ae3ed0f"},
+              {"destination": "DISK2-13sector.rom", "size": 256, "md5": "4f80448507cf43ab40c17ac08d89e278", "sha256": "2d2599521fc5763d4e8c308c2ee7c5c4d5c93785b8fb9a4f7d0381dfd5eb60b6"},
+              {"destination": "DISK2.rom", "size": 256, "md5": "2020aa1413ff77fe29353f3ee72dc295", "sha256": "de1e3e035878bab43d0af8fe38f5839c527e9548647036598ee6fe7ec74d2a7d"},
+              {"destination": "Parallel.rom", "size": 256, "md5": "5902996f16dc78fc013f6e1db14805b3", "sha256": "e1b91e0156cabc879663f4c3936b3866bda74182fb0506667cd2d01e19d9e471"},
+              {"destination": "SSC.rom", "size": 2048, "md5": "67c0d61ab0911183faf05270f881a97e", "sha256": "4fa1323ba31f4bd562486838397b7744257c126806766e360876720daca6e2aa"}
+            ]
+          ]
+        }
+      ],
+      "libraryRouteSystems": ["apple2"]
+    },
+    {
+      "id": "puae",
+      "commit": "96ebfcfc2c66233ad37f6dc99ee991211dc719ad",
+      "libraryName": "liblucent_core_puae.so",
+      "runtime": "gles-libretro",
+      "firmwareProfiles": [
+        {
+          "system": "amiga",
+          "mode": "builtin",
+          "identity": "puae-aros-sha256-1211897caea79785f2441da4b75a460255b7f85e5129e03fe0ab61a8aebfb2c1"
+        },
+        {
+          "system": "amigacd32",
+          "mode": "user-files",
+          "alternatives": [
+            [
+              {"destination": "kick40060.CD32", "size": 1048576, "md5": "f2f241bf094168cfb9e7805dc2856433"}
+            ],
+            [
+              {"destination": "kick40060.CD32", "size": 524288, "md5": "5f8924d013dd57a89cf349f4cdedc6b1"},
+              {"destination": "kick40060.CD32.ext", "size": 524288, "md5": "bb72565701b1b6faece07d68ea5da639"}
+            ]
+          ]
+        }
+      ],
+      "libraryRouteSystems": ["amiga", "amigacd32"]
+    },
+    {
+      "id": "beetle-saturn",
+      "commit": "84461434f249c1b5cd10c83ae922feae84e1acf8",
+      "libraryName": "liblucent_core_beetle_saturn.so",
+      "runtime": "gles-libretro",
+      "firmwareProfiles": [
+        {
+          "system": "saturn",
+          "mode": "user-files",
+          "alternatives": [
+            [
+              {"destination": "sega_101.bin", "size": 524288, "md5": "85ec9ca47d8f6807718151cbcca8b964"}
+            ],
+            [
+              {"destination": "mpr-17933.bin", "size": 524288, "md5": "3240872c70984b6cbfda1586cab68dbe"}
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dolphin",
+      "commit": "0ff12a5a2835762e0665afe6a161a648b433f996",
+      "libraryName": "liblucent_core_dolphin.so",
+      "systemAssetRoot": "phase2-system/dolphin/dolphin-emu",
+      "systemAssetDestination": "dolphin-emu",
+      "systemAssetProbe": "dolphin-emu/Sys/GC/dsp_rom.bin",
+      "systemAssetRevision": "a748e9b9aa0950b986d5c1a276ff7676c79a96c26d52eea09037f6cc38821ce5",
+      "systemAssetRequiredFiles": [
+        "dolphin-emu/Sys/GC/dsp_rom.bin",
+        "dolphin-emu/Sys/GC/font_western.bin",
+        "dolphin-emu/Sys/Resources/OSD_Font.ttf",
+        "dolphin-emu/Sys/Wii/shared2/wc24/nwc24msg.cfg"
+      ],
+      "libraryRouteSystems": [
+        "gamecube",
+        "wii"
+      ],
+      "runtime": "gles-libretro"
+    },
+    {
+      "id": "ppsspp",
+      "commit": "fa50bb1976065c4f8b1b47af227d367fe9771555",
+      "libraryName": "liblucent_core_ppsspp.so",
+      "systemAssetRoot": "phase2-system/ppsspp/PPSSPP",
+      "systemAssetDestination": "PPSSPP",
+      "systemAssetProbe": "PPSSPP/compat.ini",
+      "systemAssetRevision": "e0dfc11b2807c04563a7b1fb060844dabaedd5cdff803b9ebd6a57d502d498b2",
+      "systemAssetRequiredFiles": ["PPSSPP/compat.ini"],
+      "libraryRouteSystems": ["psp"],
+      "runtime": "gles-libretro"
+    },
+    {
+      "id": "play",
+      "commit": "50aedca2639521bc498ace0b2be1ea012801a86a",
+      "libraryName": "liblucent_core_play.so",
+      "runtime": "gles-libretro"
+    },
+    {
+      "id": "armsx2",
+      "commit": "788a59d641c777cb7f70726ea573d420508e0931",
+      "libraryName": "liblucent_core_armsx2.so",
+      "systemAssetRoot": "phase2-system/armsx2/pcsx2",
+      "systemAssetDestination": "pcsx2",
+      "systemAssetProbe": "pcsx2/resources/GameIndex.yaml",
+      "systemAssetRevision": "b34550cb45fccbc9108183c7cd6b844c01855dbbf1880987bf623bc997600567",
+      "systemAssetRequiredFiles": [
+        "pcsx2/resources/GameIndex.yaml",
+        "pcsx2/resources/patches.zip"
+      ],
+      "libraryRouteSystems": ["ps2"],
+      "runtime": "vulkan-libretro"
+    },
+    {
+      "id": "flycast",
+      "commit": "d4fc0774107c4c307346b469499b9303a6ca0ffa",
+      "libraryName": "liblucent_core_flycast.so",
+      "libraryRouteSystems": ["dreamcast"],
+      "runtime": "gles-libretro"
+    },
+    {
+      "id": "azahar",
+      "commit": "b42d0916ba9799297ae0e27c07d56801da1b5de5",
+      "libraryName": "liblucent_core_azahar.so",
+      "libraryRouteSystems": ["3ds"],
+      "runtime": "vulkan-libretro"
+    },
+    {
+      "id": "scummvm",
+      "commit": "6aa8fa9b6f9e5a7ae670cc355af1b727ff75c995",
+      "libraryName": "liblucent_core_scummvm.so",
+      "systemAssetRoot": "phase2-system/scummvm/scummvm",
+      "systemAssetDestination": "scummvm",
+      "systemAssetProbe": "scummvm/extra/encoding.dat",
+      "systemAssetRevision": "db6b8ecc11de3fc69a9abe3b4d489b02dadbcf6dd877c752131f2605c6235624",
+      "systemAssetRequiredFiles": [
+        "scummvm/extra/encoding.dat",
+        "scummvm/extra/sky.cpt"
+      ],
+      "libraryRouteSystems": ["scummvm"],
+      "runtime": "gles-libretro"
+    },
+    {
+      "id": "virtualjaguar",
+      "commit": "59f7f9cc594ae6c6982c2bd8fc0dbf36873f9869",
+      "libraryName": "liblucent_core_virtualjaguar.so",
+      "runtime": "gles-libretro"
+    }
+  ]
+}

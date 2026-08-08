@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "engineId": "beetle-vb",
+  "sourceCommit": "3f53a40bf8aa18777514fd4b220960427e312a3f",
+  "sourceArchiveSha256": "141f9b7a869c5632c2a59ca417f6d04b79687fd1ff05a2b62ed406139f317719",
+  "scope": "Configuration-specific audit of the files selected by the pinned Android ARM64 software build. No game, firmware, or prebuilt dependency is included. This engineering record is not legal advice.",
+  "aggregateConclusion": "Blocked. The selected build combines GPL-2.0-or-later code with legacy SoftFloat 2b terms containing additional indemnification and responsibility clauses. Compatibility with Lucent's GPLv3 combined distribution has not been established.",
+  "components": [
+    {
+      "paths": ["COPYING", "libretro.cpp", "mednafen/**"],
+      "license": "GPL-2.0-or-later",
+      "evidence": "The project license and primary emulator source notices grant GPL version 2 or, at the recipient's option, any later version."
+    },
+    {
+      "paths": ["mednafen/hw_cpu/v810/fpu-new/softfloat.h", "mednafen/hw_cpu/v810/fpu-new/**"],
+      "license": "LicenseRef-SoftFloat-2b",
+      "evidence": "The selected legacy SoftFloat 2b header carries custom terms, including indemnification and responsibility conditions beyond a standard permissive grant."
+    }
+  ],
+  "blockingGates": [
+    "Replace the legacy SoftFloat implementation with a GPL-compatible component or obtain documented legal clearance.",
+    "Do not place Beetle Virtual Boy in the qualification opt-in or APK before the distribution gate is cleared.",
+    "After clearance, repeat reproducibility, fixture, state, lifecycle, performance, and physical-device qualification."
+  ]
+}

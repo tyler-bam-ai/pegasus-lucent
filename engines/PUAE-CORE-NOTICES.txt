@@ -1,0 +1,25 @@
+Lucent Phase 2 PUAE qualification notices
+==========================================
+
+This qualification payload contains an exact Android ARM64 build of PUAE from
+libretro/libretro-uae commit 96ebfcfc2c66233ad37f6dc99ee991211dc719ad.
+PUAE and its inherited UAE/WinUAE sources are distributed under
+GPL-2.0-or-later; the complete terms are packaged as PUAE-LICENSE.txt.
+
+The selected build also links vendored libchdr (BSD-3-Clause), libmpeg2
+(GPL-2.0-or-later), zstd (BSD-3-Clause or GPL-2.0-only), zlib 1.2.7 (Zlib),
+the 7-Zip LZMA SDK public-domain sources, and libretro-common (MIT plus its
+public-domain libco implementation). Exact evidence paths and hashes are in
+phase2-puae-dependency-audit.json.
+
+The core contains a fallback AROS ROM snapshot. Its exact compressed and
+decompressed identities are recorded in phase2-puae-firmware-policy.json.
+AROS upstream declares the AROS Public License 1.1, but Lucent has not yet
+reproduced these exact ROM bytes from a pinned AROS source revision; therefore
+the release firmware and license gates remain open.
+
+Lucent contains no Amiga or CD32 Kickstart ROM. CD32 starts only after a user
+provides an exact-size, upstream-compatible ROM identity. Lucent neither
+downloads nor redistributes those proprietary files.
+
+This is a qualification-only payload. It is not approved for release.

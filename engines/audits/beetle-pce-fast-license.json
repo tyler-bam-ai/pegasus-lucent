@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "engineId": "beetle-pce-fast",
+  "sourceCommit": "b211204c7026dff6e86e79b00185512e2421fff8",
+  "sourceArchiveSha256": "ec3ef1874f0590ab6d5cd4bba86969ee085e8bef2de4b4e5f2422fe38a2c2d3d",
+  "scope": "Configuration-specific audit of the files selected by the pinned Android ARM64 software build. No game, BIOS, system-card image, or prebuilt dependency is included. This engineering record is not legal advice.",
+  "aggregateConclusion": "GPL-3.0-compatible candidate through the GPL-2.0-or-later option, subject to complete release notice and corresponding-source review.",
+  "components": [
+    {
+      "paths": ["COPYING", "libretro.cpp", "mednafen/**"],
+      "license": "GPL-2.0-or-later",
+      "evidence": "The project license and selected Mednafen source notices grant GPL version 2 or, at the recipient's option, any later version."
+    },
+    {
+      "paths": ["libretro-common/**"],
+      "license": "MIT",
+      "evidence": "Selected libretro-common files carry the MIT permission and notice text."
+    },
+    {
+      "paths": ["deps/libchdr/**"],
+      "license": "BSD-3-Clause",
+      "evidence": "The vendored libchdr source carries three-clause BSD terms."
+    },
+    {
+      "paths": ["deps/zstd/**"],
+      "license": "BSD-3-Clause",
+      "evidence": "The selected Zstandard source carries three-clause BSD terms."
+    },
+    {
+      "paths": ["deps/zlib/**"],
+      "license": "Zlib",
+      "evidence": "The selected zlib source carries the zlib notice."
+    },
+    {
+      "paths": ["deps/lzma/**"],
+      "license": "LicenseRef-LZMA-SDK-Public-Domain",
+      "evidence": "The vendored LZMA SDK files identify the selected code as public domain."
+    },
+    {
+      "paths": ["deps/tremor/**"],
+      "license": "BSD-3-Clause",
+      "evidence": "The selected Tremor source carries three-clause BSD terms."
+    }
+  ],
+  "remainingReleaseGates": [
+    "Complete release-notice and corresponding-source review for the exact selected file closure.",
+    "Qualify a redistributable visible-output fixture plus audio and input callbacks.",
+    "Prove repeated serialized-state cycles, lifecycle, performance, and physical-device behavior.",
+    "Keep PC Engine CD unavailable until Lucent can enforce a user-supplied system-card identity per system."
+  ]
+}

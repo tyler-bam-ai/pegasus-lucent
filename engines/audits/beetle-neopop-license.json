@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "engineId": "beetle-neopop",
+  "sourceCommit": "a50d5ac288a81f2104ddf43195a4efdd15c72227",
+  "sourceArchiveSha256": "ffeabf2a357548f3a55423d542c31bb1e08571d81d7104f8213df3bfa2eb9c9f",
+  "scope": "Configuration-specific audit of the files selected by the pinned Android ARM64 software build. No game, firmware, or prebuilt dependency is included. This engineering record is not legal advice.",
+  "aggregateConclusion": "GPL-3.0-compatible candidate through the GPL-2.0-or-later option, subject to complete release notice and corresponding-source review.",
+  "components": [
+    {
+      "paths": ["COPYING", "libretro.cpp", "mednafen/**"],
+      "license": "GPL-2.0-or-later",
+      "evidence": "The project license and selected emulator source notices grant GPL version 2 or, at the recipient's option, any later version."
+    },
+    {
+      "paths": ["mednafen/ngp/TLCS-900h/**"],
+      "license": "GPL-2.0-or-later",
+      "evidence": "The selected z80-fuse-derived implementation carries GPL version 2 or later notices."
+    },
+    {
+      "paths": ["libretro-common/**"],
+      "license": "MIT",
+      "evidence": "Selected libretro-common files carry the MIT permission and notice text."
+    }
+  ],
+  "remainingReleaseGates": [
+    "Complete release-notice and corresponding-source review for the exact selected file closure.",
+    "Qualify redistributable NGP and NGPC visible-output fixtures plus audio and input callbacks.",
+    "Prove repeated serialized-state cycles, lifecycle, performance, controls, and physical-device behavior."
+  ]
+}

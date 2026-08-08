@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "engineId": "dosbox-pure",
+  "sourceCommit": "7f6e8fb7385fa446d1444d671063268520bf9b54",
+  "sourceArchiveSha256": "b413767bf4d61e03c9a779cb0001bcc1bb68c78afbb058fd68d947a9f065f300",
+  "scope": "Pinned self-contained Android ARM64 libretro build; no guest OS, game, firmware, network backend, or prebuilt library is bundled.",
+  "aggregateConclusion": "GPL-3.0-compatible candidate",
+  "components": [
+    {
+      "paths": ["LICENSE", "dosbox_pure_libretro.cpp", "Makefile", "src/**", "include/**"],
+      "license": "GPL-2.0-or-later",
+      "evidence": "Project and primary file headers explicitly grant GPL version 2 or, at the recipient's option, any later version."
+    },
+    {
+      "paths": ["libretro-common/include/libretro.h", "libretro-common/include/retro_timers.h", "libretro-common/rthreads/*.h"],
+      "license": "MIT",
+      "evidence": "Each staged libretro-common file carries the MIT permission and notice text."
+    },
+    {
+      "paths": ["src/hardware/mame/saa1099.*", "src/hardware/mame/sn76496.*", "src/hardware/voodoo.cpp"],
+      "license": "BSD-3-Clause",
+      "evidence": "Files carry BSD-3-Clause identifiers or the complete three-clause notice."
+    },
+    {
+      "paths": ["src/hardware/nukedopl3.*", "src/gui/mt32emu.h"],
+      "license": "LGPL-2.1-or-later",
+      "evidence": "File headers explicitly allow LGPL 2.1 or later."
+    },
+    {
+      "paths": ["src/gui/midi_opl.h"],
+      "license": "GPL-3.0-or-later",
+      "evidence": "File header explicitly allows GPL version 3 or later."
+    },
+    {
+      "paths": ["src/gui/tsf.h", "src/cpu/core_dynrec/simde_x86_mmx.h"],
+      "license": "MIT AND CC0-1.0",
+      "evidence": "TinySoundFont carries MIT; SIMDe portions carry MIT and CC0 notices."
+    },
+    {
+      "paths": ["src/dos/drive_zip.cpp"],
+      "license": "GPL-2.0-or-later AND LicenseRef-Public-Domain",
+      "evidence": "The project file remains GPL-2.0-or-later and identifies embedded miniz, Small Deflate, ozunshrink, and Mark Adler material as public domain."
+    }
+  ],
+  "remainingReleaseGates": [
+    "Two clean path-isolated Android ARM64 builds must be byte-identical.",
+    "A redistributable DOS fixture must pass video, audio, input, and repeated state cycles.",
+    "Physical-device performance, frame pacing, audio, lifecycle, and Quick Resume must pass.",
+    "Windows 9x guest files remain user content and are not part of Lucent."
+  ]
+}

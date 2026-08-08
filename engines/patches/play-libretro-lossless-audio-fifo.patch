@@ -1,0 +1,86 @@
+diff --git a/Source/ui_libretro/SH_LibreAudio.cpp b/Source/ui_libretro/SH_LibreAudio.cpp
+index d726ad2a..13c54e86 100644
+--- a/Source/ui_libretro/SH_LibreAudio.cpp
++++ b/Source/ui_libretro/SH_LibreAudio.cpp
+@@ -1,10 +1,22 @@
+ #include "SH_LibreAudio.h"
+ #include "ext/libretro.h"
+-#include <cstring>
+-#include <mutex>
++#include <algorithm>
++#include <atomic>
+ 
+ extern retro_audio_sample_batch_t g_set_audio_sample_batch_cb;
++extern retro_environment_t g_environ_cb;
+-std::mutex m_buffer_lock;
++
++static constexpr size_t MAX_QUEUED_SAMPLES = 44100 * 2 * 2;
++static std::atomic<uint64_t> g_droppedAudioSamples(0);
++
++static void ReportAudioOverflow(size_t dropped)
++{
++	const auto total = g_droppedAudioSamples.fetch_add(dropped, std::memory_order_relaxed) + dropped;
++	retro_log_callback logger = {};
++	if(g_environ_cb && g_environ_cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &logger) && logger.log)
++		logger.log(RETRO_LOG_ERROR, "Play audio FIFO overflow dropped %u samples (total=%llu).\n",
++		           static_cast<unsigned int>(dropped), static_cast<unsigned long long>(total));
++}
+ 
+ CSoundHandler* CSH_LibreAudio::HandlerFactory()
+ {
+@@ -14,19 +26,40 @@ CSoundHandler* CSH_LibreAudio::HandlerFactory()
+ void CSH_LibreAudio::Write(int16* buffer, unsigned int sampleCount, unsigned int sampleRate)
+ {
+ 	std::lock_guard<std::mutex> lock(m_buffer_lock);
+-	m_buffer.resize(sampleCount * sizeof(int16));
+-	memcpy(m_buffer.data(), buffer, sampleCount * sizeof(int16));
++	if(!buffer || !sampleCount) return;
++
++	// Play!'s VM produces PCM on its emulation thread. The old libretro
++	// adapter replaced the pending vector on every Write(), so any second
++	// block produced before retro_run() permanently discarded the first.
++	// Preserve complete stereo blocks in a bounded FIFO instead. Overflow is
++	// an explicit, observable failure signal rather than a silent overwrite.
++	if(sampleCount > MAX_QUEUED_SAMPLES)
++	{
++		const auto dropped = sampleCount - MAX_QUEUED_SAMPLES;
++		ReportAudioOverflow(dropped);
++		buffer += sampleCount - MAX_QUEUED_SAMPLES;
++		sampleCount = MAX_QUEUED_SAMPLES;
++	}
++	const auto required = m_buffer.size() + sampleCount;
++	if(required > MAX_QUEUED_SAMPLES)
++	{
++		auto discard = required - MAX_QUEUED_SAMPLES;
++		discard += discard % 2;
++		ReportAudioOverflow(discard);
++		m_buffer.erase(m_buffer.begin(), m_buffer.begin() + std::min(discard, m_buffer.size()));
++	}
++	m_buffer.insert(m_buffer.end(), buffer, buffer + sampleCount);
+ }
+ 
+ void CSH_LibreAudio::ProcessBuffer()
+ {
+-	if(!m_buffer.empty())
++	std::vector<int16> pending;
+ 	{
+ 		std::lock_guard<std::mutex> lock(m_buffer_lock);
+-		if(g_set_audio_sample_batch_cb)
+-			g_set_audio_sample_batch_cb(m_buffer.data(), m_buffer.size() / (2 * sizeof(int16)));
+-		m_buffer.clear();
++		pending.swap(m_buffer);
+ 	}
++	if(g_set_audio_sample_batch_cb && !pending.empty())
++		g_set_audio_sample_batch_cb(pending.data(), pending.size() / 2);
+ }
+ 
+ bool CSH_LibreAudio::HasFreeBuffers()
+@@ -36,6 +69,8 @@ bool CSH_LibreAudio::HasFreeBuffers()
+ 
+ void CSH_LibreAudio::Reset()
+ {
++	std::lock_guard<std::mutex> lock(m_buffer_lock);
++	m_buffer.clear();
+ }
+ 
+ void CSH_LibreAudio::RecycleBuffers()

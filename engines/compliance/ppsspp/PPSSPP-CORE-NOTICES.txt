@@ -1,0 +1,51 @@
+PPSSPP Android ARM64 production-profile notices
+
+Artifact SHA-256: aec7dba8070f3a3840333ae2eed592ffc06e6f852b21a22c7ab87b0235bfb1fd
+Compiled source files audited: 967
+FFmpeg corresponding-source files audited: 3381
+Combined binary license: GPL-3.0-only.
+
+Linked and compile-input components:
+- ppsspp: GPL-2.0-or-later
+- SPIRV-Cross: Apache-2.0 OR MIT
+- aemu-postoffice: GPL-3.0-only
+- armips-filesystem: MIT
+- armips: MIT
+- at3-standalone: LGPL-2.1-or-later
+- basis-universal: Apache-2.0
+- cityhash: MIT
+- cpu-features: Apache-2.0
+- disarm: LicenseRef-disarm-permissive
+- gason: MIT
+- glslang: BSD-3-Clause AND BSD-2-Clause AND MIT AND Apache-2.0
+- jpge: Apache-2.0 AND LicenseRef-Intel-Permissive
+- libadrenotools-linkernsbypass: MIT
+- libadrenotools: MIT
+- libchdr-lzma: LicenseRef-Public-Domain
+- libchdr: BSD-3-Clause
+- libkirk: GPL-3.0-or-later AND (GPL-2.0-only OR GPL-3.0-only) AND LicenseRef-Public-Domain
+- libpng: Libpng-2.0
+- libretro-common: MIT
+- libzip: BSD-3-Clause
+- loongarch-disasm: BSD-2-Clause
+- lua: MIT
+- lzma-sdk: LicenseRef-Public-Domain
+- minimp3: CC0-1.0
+- naett: MIT
+- pugixml: MIT
+- rcheevos: MIT
+- riscv-disas: BSD-2-Clause
+- sfmt: BSD-3-Clause
+- snappy: BSD-3-Clause
+- udis86: BSD-2-Clause
+- vma: MIT
+- xbrz: LicenseRef-xBRZ-GPL-with-MAME-exception
+- xxhash: BSD-2-Clause
+- zlib: Zlib
+- zstd: BSD-3-Clause OR GPL-2.0-only
+- ffmpeg: LGPL-2.1-or-later AND IJG
+
+Exact license texts and file-scoped notices are in licenses/.
+Exact compiled files, FFmpeg files/static-archive members, hashes,
+toolchain identity, patch, and source coordinates are recorded in
+ppsspp-linked-sources.json. Unknown components or changed counts fail.

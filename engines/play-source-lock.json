@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-08-07",
+  "buildProfile": "android-arm64-libretro-opengl-no-ui",
+  "closureScope": "exact-staged-source-and-gitlink-closure-for-this-build-profile",
+  "sourceDateEpoch": 1783783385,
+  "toolchain": {
+    "androidAbi": "arm64-v8a",
+    "androidApi": 23,
+    "ndkVersion": "27.0.12077973",
+    "ndkSourcePropertiesSha256": "1c4a54b31c5ed242a901b4a472d412819b5e08405df1c58066bd555f9dd52515",
+    "cmakeVersion": "3.31.6-g38307f9",
+    "cmakeExecutableSha256": "94d4a3ce9e70cd9dae26e5fc7bb6ff4de67c58759762d4118a96ad2bc1b76be8",
+    "ninjaVersion": "1.12.1",
+    "ninjaExecutableSha256": "3d508e91d5c159986bea2a472b1bfa849909da133aa05582a7174d33328af933"
+  },
+  "core": {
+    "repository": "https://github.com/jpd002/Play-",
+    "commit": "50aedca2639521bc498ace0b2be1ea012801a86a",
+    "archiveSha256": "a1dffa7cff03de6e40297a2a16ce6a61da31305b74b9233de9fa97238888758f"
+  },
+  "patches": [
+    {"path": "engines/patches/play-expose-android-javavm-hook.patch", "sha256": "decbff7956d8b4817f15fc360588bb8338d4cccf6038089c4df87b66ced47de3"},
+    {"path": "engines/patches/play-libretro-no-jni-thread-attach.patch", "sha256": "ea5f4ca8243f614638287581a5d2d72894aa4b998726f7aaeb5b26e21a0df350"},
+    {"path": "engines/patches/play-libretro-chain-ee-signal-handler.patch", "sha256": "3d1297d9d76acc380ba4bad650b827dc1dbe1001fa149c61145e1bd3b3b02a56"},
+    {"path": "engines/patches/play-libretro-output-size-hook.patch", "sha256": "76111c03a3ebf4d579b6a555259bb211ad53ee4e63ba9e2da0692643f9aab3c2"},
+    {"path": "engines/patches/play-libretro-lossless-audio-fifo.patch", "sha256": "f6871409fefe83709f85aaa50b8d223681f9be34f5d825b3e26b98f7d1899398"},
+    {"path": "engines/patches/play-libretro-safe-state.patch", "sha256": "fa6f7891fe25080d630af3ee0f24af0505153ad5d795bd0a00b5e11127a2520d"}
+  ],
+  "dependencies": [
+    {"path": "deps/AltKit", "repository": "https://github.com/jpd002/AltKit", "commit": "f799f60ef6fa8b9676b4102b7dfa169fb40b6c92", "archiveSha256": "ca348273563d836765dbe48a1fd446f9efb75d778822a09d14a7fd1d1f325ff2"},
+    {"path": "deps/CodeGen", "repository": "https://github.com/jpd002/Play--CodeGen", "commit": "a5009f7dca062695b8e5aebbd71e67b4ddfa9251", "archiveSha256": "c9699563583ff4811d0c227259da1782a685303f7c3f5de0af0696e47ed706b5"},
+    {"path": "deps/Dependencies", "repository": "https://github.com/jpd002/Play-Dependencies", "commit": "8a5f6b1dea0b888b5a42b821e79470142bbea4e3", "archiveSha256": "fa8dc6c346a5141af959260037f6ac30b9987456dc07d13405e7bfb065076f93"},
+    {"path": "deps/Framework", "repository": "https://github.com/jpd002/Play--Framework", "commit": "587f278917acc0026bf5fc34b39f995fc26bd015", "archiveSha256": "3e4f87b6df7228dad15d9270cb15d855f8dd1b8803c7c30361549ff0f89326bc"},
+    {"path": "deps/Nuanceur", "repository": "https://github.com/jpd002/Nuanceur", "commit": "d96578b5a18edc67a268ed4811f0a035c56de7a0", "archiveSha256": "07e63150025de47068f9be3146af92e34aba884887c20ad441e536e32fe3f1ef"},
+    {"path": "deps/libchdr", "repository": "https://github.com/jpd002/libchdr", "commit": "284e38b6e53e0a7270cc234934e45230ed915a25", "archiveSha256": "5c184845ac1c40fc5edd351887eb32ef42c2c016fe9daaeb6eeb2bab378bd148"},
+    {"path": "deps/Dependencies/SDWebImage", "repository": "https://github.com/rs/SDWebImage", "commit": "0df32ea232aca587d5b67760b7f877079c51966c", "archiveSha256": "5f0b0ff2793c88127caa913f3777bbbcde8c140539da8c8bee75841705226dd3"},
+    {"path": "deps/Dependencies/ghc_filesystem", "repository": "https://github.com/gulrak/filesystem", "commit": "2a8b380f8d4e77b389c42a194ab9c70d8e3a0f1e", "archiveSha256": "e11db30e695764cb19daf5058a9997c933c5ebdb3e29c697898258cbded8d65f"},
+    {"path": "deps/Dependencies/xxHash", "repository": "https://github.com/Cyan4973/xxHash", "commit": "e626a72bc2321cd320e953a0ccf1584cad60f363", "archiveSha256": "34e71c085636fbc1726482996d92719d0a16e6a6097970ecf2990a27b3821162"},
+    {"path": "deps/Dependencies/zlib", "repository": "https://github.com/madler/zlib", "commit": "5a82f71ed1dfc0bec044d9702463dbdf84ea3b71", "archiveSha256": "54577b3e64db3d85268e909609faac1410d816376b037a1a415418f87f35814d"},
+    {"path": "deps/Dependencies/zstd", "repository": "https://github.com/facebook/zstd", "commit": "f8745da6ff1ad1e7bab384bd1f9d742439278e99", "archiveSha256": "4b0bd1f0cfb25e61b9103c35f27395530ff5b4c0d2513a00fd745849e85ea52c"},
+    {"path": "deps/Nuanceur/deps/vkrunner", "repository": "https://github.com/jpd002/vkrunner", "commit": "1b28778d9593d708aaa9dfa579e61c6cb08146dc", "archiveSha256": "7e3b0128b696ac80178589727b3d76aae5413abb5d06192b6391c5fe9e63a0e6"}
+  ]
+}

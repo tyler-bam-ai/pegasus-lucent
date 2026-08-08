@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "lucent-puae-minimal-bootblock",
+  "license": "CC0-1.0",
+  "sourcePath": "engines/qa/fixtures/puae-minimal",
+  "buildCommand": "python3 engines/qa/fixtures/puae-minimal/build_fixture.py OUTPUT.adf",
+  "artifact": {
+    "size": 901120,
+    "sha256": "e5692a1ef7a769936b283b465f1dd965979a2cae1e16e4f8af32e41c310724b1",
+    "bundledInApk": false
+  },
+  "runtimeQualification": false,
+  "notes": "A deterministic open fixture exists, but no physical-device execution, rendering, audio, input, state, or performance evidence is claimed."
+}

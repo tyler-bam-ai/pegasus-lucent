@@ -1,0 +1,20 @@
+diff --git a/Source/Core/DolphinLibretro/VideoContexts/GLContextLR.cpp b/Source/Core/DolphinLibretro/VideoContexts/GLContextLR.cpp
+--- a/Source/Core/DolphinLibretro/VideoContexts/GLContextLR.cpp
++++ b/Source/Core/DolphinLibretro/VideoContexts/GLContextLR.cpp
+@@ -50,8 +50,14 @@ bool GLContextLR::Initialize(const WindowSystemInfo& wsi, bool stereo, bool core)
+ 
+ void GLContextLR::Swap()
+ {
+-  Libretro::Video::video_cb(VideoCommon::g_is_duplicate_frame ? nullptr : RETRO_HW_FRAME_BUFFER_VALID,
+-        m_backbuffer_width, m_backbuffer_height, 0);
++  // Presenter::ViSwap deliberately renders duplicate XFBs for OpenGL, even
++  // though the diagnostic global retains the original duplicate flag.  A
++  // nullptr callback here would hide that newly rendered framebuffer from an
++  // in-process frontend and leave the preceding transition frame displayed.
++  // Swap is reached only after the OpenGL presenter rendered this frame, so
++  // report the completed hardware framebuffer unconditionally.
++  Libretro::Video::video_cb(RETRO_HW_FRAME_BUFFER_VALID, m_backbuffer_width,
++                            m_backbuffer_height, 0);
+ }
+ 
+ void GLContextLR::Shutdown()

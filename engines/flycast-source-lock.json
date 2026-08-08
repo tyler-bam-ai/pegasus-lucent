@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-08-07",
+  "buildProfile": "android-arm64-libretro-gles3-no-ui",
+  "closureScope": "exact-staged-source-and-gitlink-closure-for-this-build-profile",
+  "sourceDateEpoch": 1750281767,
+  "toolchain": {
+    "androidAbi": "arm64-v8a",
+    "androidApi": 24,
+    "ndkVersion": "27.0.12077973",
+    "ndkSourcePropertiesSha256": "1c4a54b31c5ed242a901b4a472d412819b5e08405df1c58066bd555f9dd52515",
+    "cmakeVersion": "3.31.6-g38307f9",
+    "cmakeExecutableSha256": "94d4a3ce9e70cd9dae26e5fc7bb6ff4de67c58759762d4118a96ad2bc1b76be8",
+    "ninjaVersion": "1.12.1",
+    "ninjaExecutableSha256": "3d508e91d5c159986bea2a472b1bfa849909da133aa05582a7174d33328af933"
+  },
+  "core": {
+    "repository": "https://github.com/flyinghead/flycast",
+    "commit": "d4fc0774107c4c307346b469499b9303a6ca0ffa",
+    "archiveSha256": "fb19f122cb1c8bb9eae302c0e97ef75df168dacc2807da53a3af829cd6a98e71"
+  },
+  "patches": [],
+  "dependencies": [
+    {
+      "path": "core/deps/libchdr",
+      "repository": "https://github.com/flyinghead/libchdr",
+      "commit": "5f82799f2c8cad1e9cd26d39a0f8d36369a5534b",
+      "archiveSha256": "11b01f5d376128c78100e48ad5db34edd0d33510fd047a5a22c03aa8e35cfd00",
+      "licenseDeclared": "BSD-3-Clause"
+    },
+    {
+      "path": "core/deps/tinygettext",
+      "repository": "https://github.com/flyinghead/tinygettext",
+      "commit": "41572a67f96013691685a38f0032f3c97aa34f79",
+      "archiveSha256": "1ceb1c0f77caaf500806cdd8a14e122762e43ce3a399a2aa228dfc0174ede709",
+      "licenseDeclared": "Zlib"
+    },
+    {
+      "path": "core/deps/tinygettext/external/tinycmmc",
+      "repository": "https://github.com/Grumbel/tinycmmc",
+      "commit": "9a51e13802d930feb7261ba8876940659b258cb7",
+      "archiveSha256": "60ed6cd061401ad76ebcde9e4b8847b85b4dfa0a86cf2bd7d99fa01f9a233a1d",
+      "licenseDeclared": "Zlib"
+    },
+    {
+      "path": "core/deps/asio",
+      "repository": "https://github.com/flyinghead/asio",
+      "commit": "d3402006e84efb6114ff93e4f2b8508412ed80d5",
+      "archiveSha256": "0364ea2e2b9c1623e32a9587e0e2da08669f0f8d0f6be9abaa48e57d992ed079",
+      "licenseDeclared": "BSL-1.0"
+    }
+  ]
+}

@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wildonrio.github.io/pegasus-lucent/engines/registry.schema.json",
+  "title": "Lucent emulation engine registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "generatedAt", "engines"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "generatedAt": { "type": "string", "format": "date" },
+    "engines": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/engine" }
+    }
+  },
+  "$defs": {
+    "engine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "phase", "tier", "displayName", "systems", "status",
+        "statusReason", "source", "license", "android", "state",
+        "firmware", "renderer", "build", "shipped"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "phase": { "const": 1 },
+        "tier": { "enum": ["1A", "1B"] },
+        "displayName": { "type": "string", "minLength": 1 },
+        "systems": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" }
+        },
+        "status": {
+          "enum": ["approved", "license-blocked", "experimental", "external"]
+        },
+        "statusReason": { "type": "string", "minLength": 1 },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "commit", "archive", "archiveSha256", "verifiedAt"],
+          "properties": {
+            "repository": { "type": "string", "pattern": "^https://" },
+            "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+            "archive": { "type": "string", "pattern": "^https://" },
+            "archiveSha256": {
+              "oneOf": [
+                { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                { "type": "null" }
+              ]
+            },
+            "verifiedAt": { "type": "string", "format": "date" }
+          }
+        },
+        "license": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["spdx", "distributionGate", "auditNote"],
+          "properties": {
+            "spdx": { "type": "string", "minLength": 1 },
+            "distributionGate": { "enum": ["audit-required", "compatible-candidate", "blocked"] },
+            "auditNote": { "type": "string", "minLength": 1 }
+          }
+        },
+        "android": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["abis", "minApi"],
+          "properties": {
+            "abis": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "enum": ["arm64-v8a", "armeabi-v7a", "x86_64"] }
+            },
+            "minApi": { "type": "integer", "minimum": 21 }
+          }
+        },
+        "state": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["capability", "compatibilityVersion", "qualified"],
+          "properties": {
+            "capability": { "enum": ["deterministic", "serialized", "basic", "unverified"] },
+            "compatibilityVersion": { "type": "integer", "minimum": 1 },
+            "qualified": { "type": "boolean" }
+          }
+        },
+        "firmware": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["required", "acceptedHashes"],
+          "properties": {
+            "required": { "type": "boolean" },
+            "requiredForSystems": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" }
+            },
+            "notes": { "type": "string", "minLength": 1 },
+            "acceptedHashes": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            }
+          }
+        },
+        "renderer": { "enum": ["software", "opengl", "vulkan", "multi"] },
+        "build": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["recipe", "reproducible", "todo"],
+          "properties": {
+            "recipe": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+            "reproducible": { "type": "boolean" },
+            "todo": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] }
+          }
+        },
+        "shipped": { "type": "boolean" }
+      }
+    }
+  }
+}

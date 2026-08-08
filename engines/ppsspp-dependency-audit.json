@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-08-07",
+  "artifactSha256": "aec7dba8070f3a3840333ae2eed592ffc06e6f852b21a22c7ab87b0235bfb1fd",
+  "combinedLicenseConcluded": "GPL-3.0-only",
+  "ppssppSourceFileCount": 527,
+  "ppsspp": {
+    "id": "ppsspp",
+    "spdx": "GPL-2.0-or-later",
+    "evidence": [
+      {"root": "source", "path": "LICENSE.TXT", "sha256": "ff265754cbb2e0d3b674f90a79ef5bbaa1f7f1075aec9f5e241524520e5049fa"}
+    ]
+  },
+  "components": [
+    {"id":"SPIRV-Cross","sourceFileCount":6,"sourcePrefixes":["ext/SPIRV-Cross/"],"spdx":"Apache-2.0 OR MIT","evidence":[{"root":"source","path":"ext/SPIRV-Cross/LICENSE","sha256":"cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"}]},
+    {"id":"aemu-postoffice","sourceFileCount":6,"sourcePrefixes":["ext/aemu_postoffice/"],"spdx":"GPL-3.0-only","evidence":[{"root":"source","path":"ext/aemu_postoffice/gpl-3.0.txt","sha256":"8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"}]},
+    {"id":"armips-filesystem","sourceFileCount":0,"sourcePrefixes":["ext/armips/ext/filesystem/"],"spdx":"MIT","evidence":[{"root":"source","path":"ext/armips/ext/filesystem/LICENSE","sha256":"1b265537c97cfb422ffb52492c96979943f54fab8746a6dd38d8329953d487cc"}]},
+    {"id":"armips","sourceFileCount":56,"sourcePrefixes":["ext/armips/"],"spdx":"MIT","evidence":[{"root":"source","path":"ext/armips/LICENSE.txt","sha256":"791ff46884cdf62188f17cabf0f099b462e92ec68986033bab243b26573b7573"}]},
+    {"id":"at3-standalone","sourceFileCount":9,"sourcePrefixes":["ext/at3_standalone/"],"spdx":"LGPL-2.1-or-later","evidence":[{"root":"source","path":"ext/at3_standalone/get_bits.cpp","sha256":"52d330db740ceb3f409f0624e5f4f3f7b1dc2bec614a696da315fbdff3fd1e5b"}]},
+    {"id":"basis-universal","sourceFileCount":1,"sourcePrefixes":["ext/basis_universal/"],"spdx":"Apache-2.0","evidence":[{"root":"source","path":"ext/basis_universal/basisu.h","sha256":"178a78804cd28173330b4ecadaac9dc743f9286ec3a370a690093c3e467a0291"}]},
+    {"id":"cityhash","sourceFileCount":1,"sourcePrefixes":["ext/cityhash/"],"spdx":"MIT","evidence":[{"root":"source","path":"ext/cityhash/COPYING","sha256":"3ed00dd93c75655599456c83cba2f69c6824fd53f24fc24206ba27b65057709d"}]},
+    {"id":"cpu-features","sourceFileCount":17,"sourcePrefixes":["ext/cpu_features/"],"spdx":"Apache-2.0","evidence":[{"root":"source","path":"ext/cpu_features/LICENSE","sha256":"af272c1b4dd08dd61d43e001d3134119d03ca7a2b057a64f7355fdf27fbea3dd"}]},
+    {"id":"disarm","sourceFileCount":1,"sourcePrefixes":["ext/disarm.cpp"],"spdx":"LicenseRef-disarm-permissive","evidence":[{"root":"source","path":"ext/disarm.cpp","sha256":"39d78e715eaeae32e3aefce7eb53e196ffe35aa7aff0401a3b4d239a1ee1e142"}]},
+    {"id":"gason","sourceFileCount":1,"sourcePrefixes":["ext/gason/"],"spdx":"MIT","evidence":[{"root":"source","path":"ext/gason/LICENSE","sha256":"a9a5c0646d67d9cc2596fab2ee1cac35bdcd4057d9dea7745425bd3cfcab40f0"}]},
+    {"id":"glslang","sourceFileCount":42,"sourcePrefixes":["ext/glslang/"],"spdx":"BSD-3-Clause AND BSD-2-Clause AND MIT AND Apache-2.0","evidence":[{"root":"source","path":"ext/glslang/LICENSE.txt","sha256":"adb783e734e906d1f46db5df29991dbde84bdb0ceab502ac2febb44fe3c2b5f4"}]},
+    {"id":"jpge","sourceFileCount":2,"sourcePrefixes":["ext/jpge/"],"spdx":"Apache-2.0 AND LicenseRef-Intel-Permissive","evidence":[{"root":"source","path":"ext/jpge/README.md","sha256":"7622ce3e49d203e6818b068de68c7e9a71f7f9dea19c92d85810c94e9d6d1814"}]},
+    {"id":"libadrenotools-linkernsbypass","sourceFileCount":2,"sourcePrefixes":["ext/libadrenotools/lib/linkernsbypass/"],"spdx":"MIT","evidence":[{"root":"source","path":"ext/libadrenotools/lib/linkernsbypass/LICENSE","sha256":"7ea796e199e46093c2f5c391697bce5abeacd02b7216aa0a84e5839afb5584f3"}]},
+    {"id":"libadrenotools","sourceFileCount":2,"sourcePrefixes":["ext/libadrenotools/"],"spdx":"MIT","evidence":[{"root":"source","path":"ext/libadrenotools/LICENSE","sha256":"7ea796e199e46093c2f5c391697bce5abeacd02b7216aa0a84e5839afb5584f3"}]},
+    {"id":"libchdr-lzma","sourceFileCount":11,"sourcePrefixes":["ext/libchdr/deps/lzma-24.05/"],"spdx":"LicenseRef-Public-Domain","evidence":[{"root":"source","path":"ext/libchdr/deps/lzma-24.05/src/LzmaDec.c","sha256":"b9ca2b8707400347c75d6fef288d1354a3b4cf93e8da42f26207b8bd4c4d5e59"}]},
+    {"id":"libchdr","sourceFileCount":5,"sourcePrefixes":["ext/libchdr/"],"spdx":"BSD-3-Clause","evidence":[{"root":"source","path":"ext/libchdr/LICENSE.txt","sha256":"e3989a7aee74a91b8cdbdfe204a6b8d03288863ec7533a21c51f1a987ba73539"}]},
+    {"id":"libkirk","sourceFileCount":6,"sourcePrefixes":["ext/libkirk/"],"spdx":"GPL-3.0-or-later AND (GPL-2.0-only OR GPL-3.0-only) AND LicenseRef-Public-Domain","evidence":[{"root":"source","path":"ext/libkirk/kirk_engine.c","sha256":"74e363f78fdec5c0fc82842a21c11c3b0363996a931805cec9fd11231a3e7763"},{"root":"source","path":"ext/libkirk/bn.c","sha256":"06d2886369f2490855e9e1541ab84901b4a5b03661fbbcd6899444d18c28718f"},{"root":"source","path":"ext/libkirk/AES.c","sha256":"3e0321521c1985aceac86d0b5388ab5256a58b94b82092ef48c658756b19d09f"}]},
+    {"id":"libpng","sourceFileCount":17,"sourcePrefixes":["ext/libpng17/"],"spdx":"Libpng-2.0","evidence":[{"root":"source","path":"ext/libpng17/png.h","sha256":"45e97298116680435abf20bc5efdb68126229aa9d0e0fff6ed607f3865766b52"}]},
+    {"id":"libretro-common","sourceFileCount":11,"sourcePrefixes":["libretro/libretro-common/"],"spdx":"MIT","evidence":[{"root":"source","path":"libretro/libretro-common/audio/conversion/float_to_s16.c","sha256":"70de97c4720b48eb3b2bf9ba5982b8ff5f74593cf8e89be2ddc4205ad3c66c71"}]},
+    {"id":"libzip","sourceFileCount":112,"sourcePrefixes":["ext/libzip/"],"spdx":"BSD-3-Clause","evidence":[{"root":"source","path":"ext/libzip/zip_source_tell_write.c","sha256":"5ab44e57ab7b06a024c8e0010e7794a30d9b50f2f3cdd52b876922753cd9b2bb"}]},
+    {"id":"loongarch-disasm","sourceFileCount":1,"sourcePrefixes":["ext/loongarch-disasm.cpp"],"spdx":"BSD-2-Clause","evidence":[{"root":"source","path":"ext/loongarch-disasm.cpp","sha256":"e5b1e0d480077771bd1ce82ae4e8e48d1271bd0a6d52e37d6e510626299a3ef9"}]},
+    {"id":"lua","sourceFileCount":32,"sourcePrefixes":["ext/lua/"],"spdx":"MIT","evidence":[{"root":"source","path":"ext/lua/lua.h","sha256":"341014ee8b49570fc01c1fb2afc6a7decc853525636c74e7a6a9507a933aa62e"}]},
+    {"id":"lzma-sdk","sourceFileCount":13,"sourcePrefixes":["ext/lzma-sdk/"],"spdx":"LicenseRef-Public-Domain","evidence":[{"root":"source","path":"ext/lzma-sdk/Lzma2Dec.c","sha256":"3d691d30e4a1f4b661d56fc483db702167ff6a91781d143a017c793c1860476f"}]},
+    {"id":"minimp3","sourceFileCount":1,"sourcePrefixes":["ext/minimp3/"],"spdx":"CC0-1.0","evidence":[{"root":"source","path":"ext/minimp3/minimp3.h","sha256":"5fb296a790734772b65a5514438cc06d14f24e539c13475ff2a7f737681c82c0"}]},
+    {"id":"naett","sourceFileCount":1,"sourcePrefixes":["ext/naett/"],"spdx":"MIT","evidence":[{"root":"source","path":"ext/naett/LICENSE","sha256":"48b79daf8988912a6c2dadffdbbba99f514817dddf11cebf3605a5f0dbfafa94"}]},
+    {"id":"pugixml","sourceFileCount":1,"sourcePrefixes":["ext/pugixml/"],"spdx":"MIT","evidence":[{"root":"source","path":"ext/pugixml/pugixml.cpp","sha256":"3ea9e9ceeeec87ed25f9c1beff6699c47d63fc37ce465021df7f83ab114e4480"}]},
+    {"id":"rcheevos","sourceFileCount":23,"sourcePrefixes":["ext/rcheevos/"],"spdx":"MIT","evidence":[{"root":"source","path":"ext/rcheevos/LICENSE","sha256":"bf820c034966a3b6be050bb85f94ec841a0b972bd5d477e362337d0574b5c219"}]},
+    {"id":"riscv-disas","sourceFileCount":1,"sourcePrefixes":["ext/riscv-disas.cpp"],"spdx":"BSD-2-Clause","evidence":[{"root":"source","path":"ext/riscv-disas.cpp","sha256":"b7e03a468aab9f66c34a564e0effd94d9b0e3f856e139961a0be09eedcedc509"}]},
+    {"id":"sfmt","sourceFileCount":1,"sourcePrefixes":["ext/sfmt19937/"],"spdx":"BSD-3-Clause","evidence":[{"root":"repository","path":"engines/licenses/ppsspp/SFMT-LICENSE.txt","sha256":"42a68eea4401b7e42c00b18597940479c2f07ad0d622caae5245ae37efdb41dc"}]},
+    {"id":"snappy","sourceFileCount":4,"sourcePrefixes":["ext/snappy/"],"spdx":"BSD-3-Clause","evidence":[{"root":"source","path":"ext/snappy/COPYING","sha256":"5221a36a801b981fbdfda7b87db64cff231a3b88223a066c325411b539df796f"}]},
+    {"id":"udis86","sourceFileCount":6,"sourcePrefixes":["ext/udis86/"],"spdx":"BSD-2-Clause","evidence":[{"root":"source","path":"ext/udis86/LICENSE","sha256":"1070640aab24327354da44507627d1db6c67482a6facc8375a758796a05e3dff"}]},
+    {"id":"vma","sourceFileCount":1,"sourcePrefixes":["ext/vma/"],"spdx":"MIT","evidence":[{"root":"source","path":"ext/vma/vk_mem_alloc.h","sha256":"9c90df285f77f631b3e3fdacf3e70aeb6e90af9e4f6b5b7bc6ce66abcd61889e"}]},
+    {"id":"xbrz","sourceFileCount":1,"sourcePrefixes":["ext/xbrz/"],"spdx":"LicenseRef-xBRZ-GPL-with-MAME-exception","evidence":[{"root":"source","path":"ext/xbrz/xbrz.h","sha256":"f0c59293edf8268abe7e749f017fe84c9ae38303aef2afc3244b2fdba9aeb69c"}]},
+    {"id":"xxhash","sourceFileCount":1,"sourcePrefixes":["ext/xxhash.c"],"spdx":"BSD-2-Clause","evidence":[{"root":"source","path":"ext/xxhash.c","sha256":"0ae36c075eb8ae22769f0ea38f4f892413499c347d0ffd50cccca338d138c58d"}]},
+    {"id":"zlib","sourceFileCount":15,"sourcePrefixes":["ext/zlib/"],"spdx":"Zlib","evidence":[{"root":"source","path":"ext/zlib/LICENSE","sha256":"845efc77857d485d91fb3e0b884aaa929368c717ae8186b66fe1ed2495753243"}]},
+    {"id":"zstd","sourceFileCount":30,"sourcePrefixes":["ext/zstd/"],"spdx":"BSD-3-Clause OR GPL-2.0-only","evidence":[{"root":"source","path":"ext/zstd/LICENSE","sha256":"7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8"}]},
+    {"id":"ffmpeg","sourceFileCount":0,"sourcePrefixes":["ffmpeg/"],"spdx":"LGPL-2.1-or-later AND IJG","evidence":[{"root":"ffmpeg","path":"LICENSE.md","sha256":"2e06d5375e3ec10363d38f4ba0680d311ff4f2024ee7f9ddb1c7a2e2bb8a5585"},{"root":"ffmpeg","path":"COPYING.LGPLv2.1","sha256":"b634ab5640e258563c536e658cad87080553df6f34f62269a21d554844e58bfe"}]}
+  ]
+}

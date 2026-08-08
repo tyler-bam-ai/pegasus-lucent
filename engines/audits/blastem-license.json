@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "engineId": "blastem",
+  "sourceCommit": "84e567e17b6fb3cea23146c4209c18d50d46cbf0",
+  "sourceArchiveSha256": "7bf9a28959fbced50479e59b7832bf9b2a9746bb06620bdd5c28c89d205e8fc7",
+  "scope": "Pinned BlastEm libretro Android ARM64 build with IS_LIB and DISABLE_NUKLEAR. The standalone SDL/JNI UI, Android application, Nuklear UI, bundled images, and shaders are not linked. The selected core includes BlastEm and its vendored zlib implementation.",
+  "conclusion": "Compatible candidate. BlastEm is GPL-3.0-or-later and the only selected third-party implementation is zlib under the Zlib license.",
+  "components": [
+    {
+      "path": "BlastEm emulator and libretro frontend",
+      "license": "GPL-3.0-or-later",
+      "evidence": "COPYING and source-file headers"
+    },
+    {
+      "path": "zlib",
+      "license": "Zlib",
+      "evidence": "zlib/LICENSE and zlib source-file notices"
+    }
+  ],
+  "excluded": [
+    "android application and SDL/JNI frontend",
+    "nuklear_ui",
+    "standalone tools",
+    "game and firmware content"
+  ],
+  "remainingReleaseGates": [
+    "redistributable Genesis fixture video/audio/input qualification",
+    "100 serialized-state cycles",
+    "physical menu-driven one-window lifecycle and performance qualification"
+  ]
+}

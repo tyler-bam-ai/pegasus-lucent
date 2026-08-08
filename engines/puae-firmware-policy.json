@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-08-07",
+  "coreCommit": "96ebfcfc2c66233ad37f6dc99ee991211dc719ad",
+  "amiga": {
+    "mode": "builtin-aros",
+    "sourcePath": "sources/src/aros.rom.c",
+    "compressedPayload": {
+      "format": "gzip",
+      "size": 560045,
+      "md5": "17587f62298849f0863e717b90d670e3",
+      "sha256": "5ee9dade0feeae8b0f30e3b35b0b79535b7313c89e3328dc6ad6bc43f42f620c"
+    },
+    "decompressedPayload": {
+      "name": "aros.bin",
+      "size": 1048576,
+      "md5": "a1487cfc4269811b9ecb683f6d555265",
+      "sha256": "1211897caea79785f2441da4b75a460255b7f85e5129e03fe0ab61a8aebfb2c1"
+    },
+    "license": {
+      "declared": "AROS-Public-License-1.1",
+      "primaryRepository": "https://github.com/aros-development-team/AROS",
+      "licensePath": "LICENSE",
+      "licenseSha256AtAudit": "825705f4b1240cf5b88f44ac745dc9d9ebaa71ac087e53bbd69a1c3064ceb9c8"
+    },
+    "provenance": {
+      "upstreamReference": "https://download.abime.net/winuae/files/b/aros.rom.cpp.zip",
+      "status": "exact-core-snapshot-bound-upstream-build-unresolved",
+      "notes": "The exact bytes are bound to the pinned PUAE source archive and proof core. The mutable WinUAE download currently differs, so Lucent does not claim a source-to-ROM rebuild or close the firmware/license release gate."
+    }
+  },
+  "amigacd32": {
+    "mode": "user-files",
+    "alternatives": [
+      [
+        {
+          "destination": "kick40060.CD32",
+          "size": 1048576,
+          "md5": "f2f241bf094168cfb9e7805dc2856433"
+        }
+      ],
+      [
+        {
+          "destination": "kick40060.CD32",
+          "size": 524288,
+          "md5": "5f8924d013dd57a89cf349f4cdedc6b1"
+        },
+        {
+          "destination": "kick40060.CD32.ext",
+          "size": 524288,
+          "md5": "bb72565701b1b6faece07d68ea5da639"
+        }
+      ]
+    ],
+    "provenance": {
+      "sourcePath": "README.md",
+      "status": "compatibility-identities-only",
+      "notes": "These are upstream compatibility MD5 identities, not redistribution approval. Lucent accepts only exact-size user-owned files and never packages or downloads them."
+    }
+  },
+  "distribution": {
+    "proprietaryFirmwareBundled": false,
+    "proprietaryFirmwareDownloaded": false,
+    "userFilesCopiedToPrivateSystemDirectory": true
+  },
+  "releaseGates": {
+    "arosSourceReproduction": false,
+    "arosLicenseProvenance": false,
+    "cd32LawfulProvenance": false,
+    "deviceExecution": false
+  }
+}
