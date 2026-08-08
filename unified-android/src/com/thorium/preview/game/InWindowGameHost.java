@@ -196,6 +196,28 @@ public final class InWindowGameHost
         return active != null && active.activity == activity;
     }
 
+    // Confine ROMs to real public storage volumes and reject app-private or
+    // system paths. Retro handhelds keep their library on a removable SD card
+    // mounted at /storage/<VOLUME>/ (e.g. /storage/6B6F-F576/...), so those
+    // volumes must be allowed alongside internal storage and the raw mount.
+    private static boolean isAllowedRomRoot(String canonical) {
+        if (canonical == null) return false;
+        if (canonical.startsWith("/storage/emulated/") ||
+                canonical.startsWith("/storage/self/primary/") ||
+                canonical.startsWith("/mnt/media_rw/")) return true;
+        // A removable volume label is /storage/<id>/... where <id> is not the
+        // internal "emulated"/"self" namespace (FAT/exFAT looks like 6B6F-F576;
+        // ext volumes use a longer UUID). Require a non-empty first segment and
+        // at least one path element beneath it.
+        if (!canonical.startsWith("/storage/")) return false;
+        String rest = canonical.substring("/storage/".length());
+        int slash = rest.indexOf('/');
+        if (slash <= 0 || slash == rest.length() - 1) return false;
+        String volume = rest.substring(0, slash);
+        return !volume.equals("emulated") && !volume.equals("self") &&
+                !volume.contains("..");
+    }
+
     private static GameLaunchRequest requestFrom(Activity activity, Intent source) {
         String path = clean(source.getStringExtra("path"));
         String system = clean(source.getStringExtra("system_id"));
@@ -236,9 +258,7 @@ public final class InWindowGameHost
             return null;
         }
         String canonical = file.getPath();
-        if (!file.isFile() || !(canonical.startsWith("/storage/emulated/") ||
-                canonical.startsWith("/storage/self/primary/") ||
-                canonical.startsWith("/mnt/media_rw/"))) return null;
+        if (!file.isFile() || !isAllowedRomRoot(canonical)) return null;
         Uri uri = new Uri.Builder().scheme("content").authority(AUTHORITY)
                 .appendPath("rom").appendPath(file.getName())
                 .appendQueryParameter("path", canonical).build();
