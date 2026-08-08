@@ -1119,10 +1119,14 @@ def run_list_view_smoke(adb: Path, serial: str,
                         controller: PhysicalController, case: SystemCase,
                         visible_order: list[str], output: Path) -> dict[str, object]:
     controller.stick("down")
+    # 25 ms pulses are documented as loseable on the Thor (handover QA
+    # lessons); a dropped UP leaves the cursor short of the top and every
+    # subsequent DOWN lands on the wrong system. Use the proven >=40 ms
+    # duration the rest of this harness uses.
     for _ in range(len(visible_order) + 3):
-        controller.key(controller.UP, "dpad-up-list-system", hold=0.025)
+        controller.key(controller.UP, "dpad-up-list-system", hold=0.045)
     for _ in range(visible_order.index(case.folder)):
-        controller.key(controller.DOWN, "dpad-down-list-system", hold=0.025)
+        controller.key(controller.DOWN, "dpad-down-list-system", hold=0.045)
     list_frame = output / f"list-view-{case.folder}.png"
     screenshot(adb, serial, list_frame)
     controller.key(controller.A, "physical-a-lock-list-system", hold=0.055)
