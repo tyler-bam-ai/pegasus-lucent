@@ -14,6 +14,8 @@ COMMAND = (ROOT / "unified-android" / "src" / "com" / "thorium" /
                    encoding="utf-8")
 ROUTER = (ROOT / "android-companion" / "src" / "com" / "thorium" /
           "preview" / "GameLaunchRouter.java").read_text(encoding="utf-8")
+ROUTE_STORE = (ROOT / "android-companion" / "src" / "com" / "thorium" /
+               "preview" / "EngineRouteStore.java").read_text(encoding="utf-8")
 MIGRATION = (ROOT / "android-companion" / "src" / "com" / "thorium" /
              "preview" / "LaunchMetadataRouter.java").read_text(encoding="utf-8")
 IMPORTER = (ROOT / "android-companion" / "src" / "com" / "thorium" /
@@ -38,8 +40,13 @@ SECONDARY = (ROOT / "android-companion" / "src" / "com" / "thorium" /
 
 class GameLaunchRouterTest(unittest.TestCase):
     def test_imported_metadata_uses_stable_runtime_router(self):
-        self.assertIn("GameLaunchRouter.supportsSystem(context, system)", IMPORTER)
-        self.assertIn("GameLaunchRouter.metadataCommand(context, system)", IMPORTER)
+        # The importer now delegates to EngineRouteStore, the single source of
+        # truth for a system's launch command. EngineRouteStore preserves the
+        # internal route: when it resolves INTERNAL it still emits exactly the
+        # stable in-process runtime command from GameLaunchRouter.
+        self.assertIn("EngineRouteStore.launchCommand(context, system)", IMPORTER)
+        self.assertIn("GameLaunchRouter.supportsSystem(context, canonical)", ROUTE_STORE)
+        self.assertIn("GameLaunchRouter.metadataCommand(context, canonical)", ROUTE_STORE)
         self.assertIn("InWindowGameHost.ACTION_LAUNCH", ROUTER)
         self.assertIn("org.pegasus_frontend.android.MainActivity", COMMAND)
         self.assertIn('return "am start -a', COMMAND)
@@ -107,7 +114,13 @@ class GameLaunchRouterTest(unittest.TestCase):
         self.assertNotIn("reloadPegasusFrontend", migration_block)
 
     def test_migration_drops_unsupported_stale_launch_routes(self):
-        self.assertIn("GameLaunchRouter.metadataCommand(context, system)", MIGRATION)
+        # On-disk metadata is normalized through the same single source of truth
+        # the importer uses. EngineRouteStore.launchCommand re-emits the resolved
+        # route (internal command when internal, else the external am-start
+        # recipe), so a route change or a stale standalone route is corrected in
+        # place. Internal remains preserved inside EngineRouteStore.
+        self.assertIn("EngineRouteStore.launchCommand(context, system)", MIGRATION)
+        self.assertIn("GameLaunchRouter.metadataCommand(context, canonical)", ROUTE_STORE)
         self.assertIn("if (collectionLaunch)", NORMALIZER)
         self.assertIn("if (!desired.isEmpty()", NORMALIZER)
 

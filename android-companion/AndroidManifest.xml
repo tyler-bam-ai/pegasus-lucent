@@ -43,10 +43,14 @@
             android:taskAffinity="com.thorium.preview.preview"
             android:exported="false" />
 
+        <!-- Lucent's own content-URI trampoline for scoped-storage external
+             emulators. Non-exported so only Lucent's own uid (Pegasus's
+             in-process am start) can reach it; it carries no launcher/home
+             category and is not an emulator. -->
         <activity
             android:name=".RomLaunchActivity"
             android:excludeFromRecents="true"
-            android:exported="true" />
+            android:exported="false" />
 
         <activity
             android:name=".BrowserActivity"

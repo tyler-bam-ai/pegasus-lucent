@@ -48,7 +48,8 @@ class OneAppApkVerifierTest(unittest.TestCase):
       A: android:name="com.thorium.preview.game.LucentGameActivity" (Raw: "com.thorium.preview.game.LucentGameActivity")
 '''
         errors = MODULE.verify_manifest(value)
-        self.assertTrue(any("Activity set differs" in error for error in errors))
+        self.assertTrue(any(
+            "Activities outside the Lucent boundary" in error for error in errors))
 
     def test_rejects_external_emulator_launcher(self):
         value = MANIFEST.replace(
@@ -56,7 +57,30 @@ class OneAppApkVerifierTest(unittest.TestCase):
             "org.dolphinemu.dolphinemu.ui.main.MainActivity",
         )
         errors = MODULE.verify_manifest(value)
-        self.assertTrue(any("Activity set differs" in error for error in errors))
+        self.assertTrue(any(
+            "Activities outside the Lucent boundary" in error for error in errors))
+
+    def test_allows_nonexported_external_route_trampoline(self):
+        value = MANIFEST + '''
+    E: activity
+      A: android:name="com.thorium.preview.RomLaunchActivity" (Raw: "com.thorium.preview.RomLaunchActivity")
+      A: android:exported(0x01010010)=(type 0x12)0x0
+      A: android:excludeFromRecents(0x01010005)=(type 0x12)0xffffffff
+'''
+        errors = MODULE.verify_manifest(value)
+        self.assertFalse(any(
+            "outside the Lucent boundary" in error or "trampoline" in error
+            for error in errors))
+
+    def test_rejects_exported_external_route_trampoline(self):
+        value = MANIFEST + '''
+    E: activity
+      A: android:name="com.thorium.preview.RomLaunchActivity" (Raw: "com.thorium.preview.RomLaunchActivity")
+      A: android:exported(0x01010010)=(type 0x12)0xffffffff
+'''
+        self.assertTrue(any(
+            "trampoline must be non-exported" in error
+            for error in MODULE.verify_manifest(value)))
 
     def test_rejects_legacy_external_app_authority(self):
         value = MANIFEST.replace(

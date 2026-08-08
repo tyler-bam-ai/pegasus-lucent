@@ -10,178 +10,424 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * Curated, RetroArch-free Android emulator catalog.
+ * Curated Android external-emulator catalog.
  *
- * The catalog deliberately separates discovery from installation. Android only
- * permits a regular app to silently install another APK when it is a device or
- * profile owner. Lucent can therefore detect a missing emulator, select the
- * correct official source, and stage an installer, but a normal retail device
- * must still show Android's package-install confirmation.
+ * Each canonical system maps to an ORDERED list of candidate emulators. The
+ * first entry is the default external choice; every entry carries a direct
+ * launch recipe so a game boots straight into gameplay (never the emulator's
+ * own menu). External emulation is only ever selected as a per-system user
+ * choice (EngineRouteStore), or automatically for a system that has no bundled
+ * internal engine.
+ *
+ * Installation stays separate from discovery. Android only lets a regular app
+ * silently install another APK when it is a device/profile owner, so Lucent can
+ * detect a missing emulator and open its official source, but a normal retail
+ * device must still confirm Android's package installer.
  */
 final class EmulatorCatalog {
-    static final class Entry {
+
+    // ROM delivery mechanisms an emulator accepts.
+    static final String DELIVERY_FILE_PATH = "file-path";     // --es <key> "{file.path}"
+    static final String DELIVERY_ACTION_VIEW = "action-view"; // -a VIEW -d file://{file.path}
+    static final String DELIVERY_CONTENT_URI = "content-uri"; // via RomLaunchActivity trampoline
+    static final String DELIVERY_UNSUPPORTED = "unsupported";
+
+    /** A single direct-launch option for a system. */
+    static final class Option {
         final String id;
         final String name;
-        final List<String> systems;
-        final List<String> packages;
-        final String source;
-        final String delivery;
-        final boolean directLaunch;
+        final List<String> packages;   // aliases: paid/free, stable/nightly forks
+        final String source;           // official source URL
+        final String sourceType;       // store | github | official | official-api | external
+        final String delivery;         // one of the DELIVERY_* constants
+        final String action;           // intent action for the target component
+        final String component;        // "<activity>" appended to installed package, or fully-qualified
+        final String romExtraKey;      // string-extra key that carries the ROM path (FILE_PATH)
+        final Map<String, String> extras; // additional fixed --es extras (e.g. RetroArch LIBRETRO)
+        final String coreLibrary;      // libretro core file name for RetroArch-style hosts, or ""
 
-        Entry(String id, String name, String systems, String packages, String source,
-              String delivery, boolean directLaunch) {
+        Option(String id, String name, String packages, String source, String sourceType,
+               String delivery, String action, String component, String romExtraKey,
+               Map<String, String> extras, String coreLibrary) {
             this.id = id;
             this.name = name;
-            this.systems = words(systems);
             this.packages = words(packages);
-            this.source = source;
+            this.source = source == null ? "" : source;
+            this.sourceType = sourceType == null ? "" : sourceType;
             this.delivery = delivery;
-            this.directLaunch = directLaunch;
+            this.action = action == null ? "" : action;
+            this.component = component == null ? "" : component;
+            this.romExtraKey = romExtraKey == null ? "" : romExtraKey;
+            this.extras = extras == null ? Collections.<String, String>emptyMap() :
+                    Collections.unmodifiableMap(new LinkedHashMap<>(extras));
+            this.coreLibrary = coreLibrary == null ? "" : coreLibrary;
         }
 
+        boolean supported() { return !DELIVERY_UNSUPPORTED.equals(delivery); }
+
         String installedPackage(Context context) {
-            PackageManager packagesManager = context.getPackageManager();
-            for (String packageName : packages) {
+            PackageManager manager = context.getPackageManager();
+            for (String name : packages) {
                 try {
-                    packagesManager.getPackageInfo(packageName, 0);
-                    return packageName;
+                    manager.getPackageInfo(name, 0);
+                    return name;
                 } catch (Exception ignored) {}
             }
             return "";
         }
     }
 
-    private static final List<Entry> ENTRIES = new ArrayList<>();
-    private static final Map<String, Entry> BY_SYSTEM = new LinkedHashMap<>();
+    // system -> ordered candidate options
+    private static final Map<String, List<Option>> BY_SYSTEM = new LinkedHashMap<>();
 
     static {
-        // Current standalone Android emulators. Package aliases let Lucent
-        // recognize paid/free, stable/nightly, and actively maintained forks
-        // without surfacing those implementation details in the game library.
-        add("mame4droid-current", "MAME4droid Current", "arcade",
-                "com.seleuco.mame4d2024",
-                "https://github.com/seleuco/MAME4droid-2024/releases", "github", true);
-        add("2600emu", "2600.emu", "atari2600",
-                "com.explusalpha.A2600Emu", "https://www.explusalpha.com/contents/emuex",
-                "store", true);
-        add("colleen", "Colleen", "atari800 atari5200",
-                "name.nick.jubanka.colleen", "https://github.com/romjacket/Colleen",
-                "external", true);
-        add("nesemu", "NES.emu", "nes",
-                "com.explusalpha.NesEmu", "https://www.explusalpha.com/contents/emuex",
-                "store", true);
-        add("snes9x", "Snes9x EX+", "snes",
-                "com.explusalpha.Snes9xPlus", "https://www.explusalpha.com/contents/emuex",
-                "store", true);
-        add("gbcemu", "GBC.emu", "gb gbc",
-                "com.explusalpha.GbcEmu", "https://www.explusalpha.com/contents/emuex",
-                "store", true);
-        add("gbaemu", "GBA.emu", "gba",
-                "com.explusalpha.GbaEmu", "https://www.explusalpha.com/contents/emuex",
-                "store", true);
-        add("mdemu", "MD.emu", "sg1000 mastersystem megadrive segacd sega32x gamegear",
-                "com.explusalpha.MdEmu", "https://www.explusalpha.com/contents/emuex",
-                "store", true);
-        add("pceemu", "PCE.emu", "pcengine pcenginecd",
-                "com.PceEmu", "https://www.explusalpha.com/contents/emuex", "store", true);
-        add("neoemu", "NEO.emu", "neogeo neogeocd",
-                "com.explusalpha.NeoEmu", "https://www.explusalpha.com/contents/emuex",
-                "store", true);
-        add("ngpemu", "NGP.emu", "ngp",
-                "com.explusalpha.NgpEmu", "https://www.explusalpha.com/contents/emuex",
-                "store", true);
-        add("swanemu", "Swan.emu", "wonderswan wonderswancolor",
-                "com.explusalpha.SwanEmu", "https://www.explusalpha.com/contents/emuex",
-                "store", true);
-        add("saturnemu", "Saturn.emu", "saturn",
-                "com.explusalpha.SaturnEmu", "https://www.explusalpha.com/contents/emuex",
-                "store", true);
-        add("c64emu", "C64.emu", "c64",
-                "com.explusalpha.C64Emu", "https://www.explusalpha.com/contents/emuex",
-                "store", true);
-        add("msxemu", "MSX.emu", "msx",
-                "com.explusalpha.MsxEmu", "https://www.explusalpha.com/contents/emuex",
-                "store", true);
-        add("colem", "ColEm", "colecovision",
-                "com.fms.colem.deluxe com.fms.colem", "https://fms.komkon.org/ColEm/",
-                "store", true);
-        add("m64plus-fz", "M64Plus FZ", "n64",
-                "org.mupen64plusae.v3.fzurita.pro org.mupen64plusae.v3.fzurita " +
-                "org.mupen64plusae.v3.fzurita.amazon",
-                "https://github.com/mupen64plus-ae/mupen64plus-ae", "store", true);
-        add("duckstation", "DuckStation", "psx",
-                "com.github.stenzek.duckstation",
-                "https://github.com/stenzek/duckstation/releases", "store", true);
-        add("armsx2", "ARMSX2", "ps2",
-                "com.armsx2 xyz.aethersx2.android", "https://github.com/ARMSX2/ARMSX2",
-                "external", true);
-        add("flycast", "Flycast", "dreamcast",
-                "com.flycast.emulator com.reicast.emulator",
-                "https://github.com/flyinghead/flycast/releases", "github", true);
-        add("melonds", "melonDS", "nds",
-                "me.magnum.melonds.nightly me.magnum.melonds me.magnum.melondualds",
-                "https://github.com/rafaelvcaetano/melonDS-android/releases", "github", true);
-        add("dolphin", "Dolphin", "gc wii",
-                "org.dolphinemu.dolphinemu",
-                "https://api.dolphin-emu.org/download/", "official-api", true);
-        add("azahar", "Azahar", "n3ds",
-                "org.azahar_emu.azahar io.github.lime3ds.android org.citra.emu",
-                "https://github.com/azahar-emu/azahar/releases", "github", true);
-        add("ppsspp", "PPSSPP", "psp",
-                "org.ppsspp.ppssppgold org.ppsspp.ppsspp",
-                "https://dev.ppsspp.org/download/", "official-api", true);
-        add("vita3k", "Vita3K", "psvita",
-                "org.vita3k.emulator org.vita3k.emulator.ikhoeyZX",
-                "https://github.com/Vita3K/Vita3K-Android/releases", "github", true);
-        add("cemu", "Cemu", "wiiu",
-                "info.cemu.cemu", "https://github.com/cemu-project/Cemu/releases", "github", true);
-        add("eden", "Eden", "switch",
-                "dev.legacy.eden_emulator org.citron.citron_emu",
-                "https://git.eden-emu.dev/eden-emu/eden", "external", true);
-        add("winlator", "Winlator", "windows",
-                "com.winlator.vanilla com.winlator.cmod com.winlator",
-                "https://github.com/brunodev85/winlator/releases", "github", true);
-        add("dosbox", "Magic DOSBox", "dos",
-                "bruenor.magicbox.free bruenor.magicbox",
-                "https://magicbox.imejl.sk/", "store", true);
-        add("scummvm", "ScummVM", "scummvm",
-                "org.scummvm.scummvm", "https://www.scummvm.org/downloads/", "official", true);
+        // ----- Nintendo home/handheld -----
+        put("nes", emuEx("nesemu", "NES.emu", "com.explusalpha.NesEmu"),
+                retroArch("nes", "fceumm_libretro_android.so"));
+        put("snes", emuEx("snes9x", "Snes9x EX+", "com.explusalpha.Snes9xPlus"),
+                retroArch("snes", "snes9x_libretro_android.so"));
+        put("gb", emuEx("gbcemu", "GBC.emu", "com.explusalpha.GbcEmu"),
+                retroArch("gb", "gambatte_libretro_android.so"));
+        put("gbc", emuEx("gbcemu", "GBC.emu", "com.explusalpha.GbcEmu"),
+                retroArch("gbc", "gambatte_libretro_android.so"));
+        put("gba", emuEx("gbaemu", "GBA.emu", "com.explusalpha.GbaEmu"),
+                pathApp("myboy", "My Boy!", "com.fastemulator.gba com.fastemulator.gbafree",
+                        "https://play.google.com/store/apps/details?id=com.fastemulator.gba",
+                        "store", "com.fastemulator.emulator.EmulatorActivity", "ROM"),
+                retroArch("gba", "mgba_libretro_android.so"));
+        put("n64", pathApp("m64plus-fz", "M64Plus FZ",
+                        "org.mupen64plusae.v3.fzurita.pro org.mupen64plusae.v3.fzurita " +
+                        "org.mupen64plusae.v3.fzurita.amazon",
+                        "https://github.com/mupen64plus-ae/mupen64plus-ae", "store",
+                        "paulscode.android.mupen64plusae.SplashActivity", "ROM"),
+                retroArch("n64", "mupen64plus_next_libretro_android.so"));
+        put("nds", pathApp("melonds", "melonDS",
+                        "me.magnum.melonds.nightly me.magnum.melonds me.magnum.melondualds",
+                        "https://github.com/rafaelvcaetano/melonDS-android/releases", "github",
+                        "me.magnum.melonds.ui.emulator.EmulatorActivity", "PATH"),
+                pathApp("drastic", "DraStic", "com.dsemu.drastic",
+                        "https://play.google.com/store/apps/details?id=com.dsemu.drastic",
+                        "store", "com.dsemu.drastic.DraSticActivity", "GAME_PATH"),
+                retroArch("nds", "melondsds_libretro_android.so"));
+        // Keys are canonical system ids (EngineSystemIdResolver.canonical): the
+        // catalog is looked up post-canonicalization, so GameCube is "gamecube"
+        // (not "gc") and the 3DS is "3ds" (not "n3ds"). Keying on the raw alias
+        // would leave those systems with no reachable external option.
+        put("gamecube", pathApp("dolphin", "Dolphin", "org.dolphinemu.dolphinemu",
+                        "https://dolphin-emu.org/download/", "official-api",
+                        "org.dolphinemu.dolphinemu.ui.main.MainActivity", "AutoStartFile"));
+        put("wii", pathApp("dolphin", "Dolphin", "org.dolphinemu.dolphinemu",
+                        "https://dolphin-emu.org/download/", "official-api",
+                        "org.dolphinemu.dolphinemu.ui.main.MainActivity", "AutoStartFile"));
+        put("3ds", pathApp("azahar", "Azahar",
+                        "org.azahar_emu.azahar io.github.lime3ds.android org.citra.emu",
+                        "https://github.com/azahar-emu/azahar/releases", "github",
+                        "org.citra.citra_emu.activities.EmulationActivity", "GamePath"),
+                retroArch("n3ds", ""));
+        put("switch", contentUri("eden", "Eden",
+                        "dev.legacy.eden_emulator org.citron.citron_emu",
+                        "https://git.eden-emu.dev/eden-emu/eden", "external",
+                        "org.yuzu.yuzu_emu.activities.EmulationActivity"));
+        put("wiiu", contentUri("cemu", "Cemu", "info.cemu.cemu",
+                        "https://github.com/cemu-project/Cemu/releases", "github",
+                        "info.cemu.cemu.emulation.EmulationActivity"));
+        // PS3: the user explicitly requires aPS3e to be represented (an RPCS3-
+        // derived Android port). It launches a decrypted user game directory.
+        put("ps3", pathApp("aps3e", "aPS3e", "aenu.aps3e",
+                        "https://github.com/aenu1/aps3e/releases", "github",
+                        "aenu.aps3e.Emulator_ui", "game_path"));
+        put("virtualboy", retroArch("virtualboy", "mednafen_vb_libretro_android.so"));
 
-        // No mature direct-launch Android option is selected for these systems.
-        // Keeping them explicit prevents Lucent from pretending that an unsafe
-        // or abandoned build can be silently installed.
-        unsupported("no-standalone", "No maintained standalone Android emulator selected",
-                "odyssey2 intellivision apple2 amstradcpc amiga atarist atari7800 " +
-                "3do amigacd32 jaguar virtualboy xbox xbox360 ps3 zxspectrum");
+        // ----- Sega -----
+        put("sg1000", mdEmu(), retroArch("sg1000", "genesis_plus_gx_libretro_android.so"));
+        put("mastersystem", mdEmu(), retroArch("mastersystem", "genesis_plus_gx_libretro_android.so"));
+        put("megadrive", mdEmu(), retroArch("megadrive", "genesis_plus_gx_libretro_android.so"));
+        put("gamegear", mdEmu(), retroArch("gamegear", "genesis_plus_gx_libretro_android.so"));
+        put("segacd", mdEmu(), retroArch("segacd", "genesis_plus_gx_libretro_android.so"));
+        put("sega32x", mdEmu(), retroArch("sega32x", "picodrive_libretro_android.so"));
+        put("saturn", emuEx("saturnemu", "Saturn.emu", "com.explusalpha.SaturnEmu"),
+                retroArch("saturn", "mednafen_saturn_libretro_android.so"));
+        put("dreamcast", pathApp("flycast", "Flycast",
+                        "com.flycast.emulator com.reicast.emulator",
+                        "https://github.com/flyinghead/flycast/releases", "github",
+                        "com.flycast.emulator.MainActivity", "GAME_PATH"),
+                pathApp("redream", "Redream", "io.recompiled.redream",
+                        "https://play.google.com/store/apps/details?id=io.recompiled.redream",
+                        "store", "io.recompiled.redream.MainActivity", "GAME"),
+                retroArch("dreamcast", "flycast_libretro_android.so"));
+
+        // ----- Sony -----
+        put("psx", pathApp("duckstation", "DuckStation", "com.github.stenzek.duckstation",
+                        "https://github.com/stenzek/duckstation/releases", "store",
+                        "com.github.stenzek.duckstation.EmulationActivity", "bootPath"),
+                pathApp("epsxe", "ePSXe", "com.epsxe.ePSXe",
+                        "https://play.google.com/store/apps/details?id=com.epsxe.ePSXe",
+                        "store", "com.epsxe.ePSXe.ePSXe", "com.epsxe.ePSXe.isoName"),
+                retroArch("psx", "pcsx_rearmed_libretro_android.so"));
+        put("ps2", pathApp("armsx2", "ARMSX2 / AetherSX2",
+                        "com.armsx2 xyz.aethersx2.android",
+                        "https://github.com/ARMSX2/ARMSX2", "external",
+                        "xyz.aethersx2.android.EmulationActivity", "bootPath"),
+                retroArch("ps2", "play_libretro_android.so"));
+        put("psp", pathApp("ppsspp", "PPSSPP",
+                        "org.ppsspp.ppssppgold org.ppsspp.ppsspp",
+                        "https://dev.ppsspp.org/download/", "official-api",
+                        "org.ppsspp.ppsspp.PpssppActivity", "ShortcutFile"),
+                retroArch("psp", "ppsspp_libretro_android.so"));
+        put("psvita", pathApp("vita3k", "Vita3K",
+                        "org.vita3k.emulator org.vita3k.emulator.ikhoeyZX",
+                        "https://github.com/Vita3K/Vita3K-Android/releases", "github",
+                        "org.vita3k.emulator.Emulator", "AppPath"));
+
+        // ----- NEC / SNK / Bandai -----
+        put("pcengine", emuEx("pceemu", "PCE.emu", "com.PceEmu"),
+                retroArch("pcengine", "mednafen_pce_fast_libretro_android.so"));
+        put("pcenginecd", emuEx("pceemu", "PCE.emu", "com.PceEmu"),
+                retroArch("pcenginecd", "mednafen_pce_fast_libretro_android.so"));
+        put("neogeo", emuEx("neoemu", "NEO.emu", "com.explusalpha.NeoEmu"),
+                retroArch("neogeo", "fbneo_libretro_android.so"));
+        put("neogeocd", emuEx("neoemu", "NEO.emu", "com.explusalpha.NeoEmu"),
+                retroArch("neogeocd", "fbneo_libretro_android.so"));
+        put("ngp", emuEx("ngpemu", "NGP.emu", "com.explusalpha.NgpEmu"),
+                retroArch("ngp", "mednafen_ngp_libretro_android.so"));
+        put("wonderswan", emuEx("swanemu", "Swan.emu", "com.explusalpha.SwanEmu"),
+                retroArch("wonderswan", "mednafen_wswan_libretro_android.so"));
+        put("wonderswancolor", emuEx("swanemu", "Swan.emu", "com.explusalpha.SwanEmu"),
+                retroArch("wonderswancolor", "mednafen_wswan_libretro_android.so"));
+
+        // ----- Home computers / arcade / misc -----
+        put("arcade", pathApp("mame4droid", "MAME4droid 2024", "com.seleuco.mame4d2024",
+                        "https://github.com/seleuco/MAME4droid-2024/releases", "github",
+                        "com.seleuco.mame4d2024.MAME4droid", "MAME4all_path"),
+                retroArch("arcade", "fbneo_libretro_android.so"));
+        put("c64", emuEx("c64emu", "C64.emu", "com.explusalpha.C64Emu"),
+                retroArch("c64", "vice_x64_libretro_android.so"));
+        put("msx", emuEx("msxemu", "MSX.emu", "com.explusalpha.MsxEmu"),
+                retroArch("msx", "bluemsx_libretro_android.so"));
+        put("colecovision", pathApp("colem", "ColEm",
+                        "com.fms.colem.deluxe com.fms.colem", "https://fms.komkon.org/ColEm/",
+                        "store", "com.fms.emulib.EmulatorActivity", "path"),
+                retroArch("colecovision", "bluemsx_libretro_android.so"));
+        put("atari2600", emuEx("2600emu", "2600.emu", "com.explusalpha.A2600Emu"),
+                retroArch("atari2600", "stella2014_libretro_android.so"));
+        put("atari5200", pathApp("colleen", "Colleen", "name.nick.jubanka.colleen",
+                        "https://github.com/romjacket/Colleen", "external",
+                        "name.nick.jubanka.colleen.MainActivity", "ROM"),
+                retroArch("atari5200", "a5200_libretro_android.so"));
+        put("atari800", pathApp("colleen", "Colleen", "name.nick.jubanka.colleen",
+                        "https://github.com/romjacket/Colleen", "external",
+                        "name.nick.jubanka.colleen.MainActivity", "ROM"),
+                retroArch("atari800", "atari800_libretro_android.so"));
+        put("atari7800", retroArch("atari7800", "prosystem_libretro_android.so"));
+        put("intellivision", retroArch("intellivision", "freeintv_libretro_android.so"));
+        put("odyssey2", retroArch("odyssey2", "o2em_libretro_android.so"));
+        put("amiga", retroArch("amiga", "puae_libretro_android.so"));
+        put("amigacd32", retroArch("amigacd32", "puae_libretro_android.so"));
+        put("atarist", retroArch("atarist", "hatari_libretro_android.so"));
+        put("jaguar", retroArch("jaguar", "virtualjaguar_libretro_android.so"));
+        put("3do", retroArch("3do", "opera_libretro_android.so"));
+        put("zxspectrum", pathApp("speccy", "Speccy",
+                        "com.fms.speccy.deluxe com.fms.speccy", "https://fms.komkon.org/Speccy/",
+                        "store", "com.fms.emulib.EmulatorActivity", "path"),
+                retroArch("zxspectrum", "fuse_libretro_android.so"));
+        put("amstradcpc", retroArch("amstradcpc", "cap32_libretro_android.so"));
+        put("windows", pathApp("winlator", "Winlator",
+                        "com.winlator.vanilla com.winlator.cmod com.winlator",
+                        "https://github.com/brunodev85/winlator/releases", "github",
+                        "com.winlator.XServerDisplayActivity", "exe_path"));
+        put("dos", pathApp("dosbox", "Magic DOSBox",
+                        "bruenor.magicbox.free bruenor.magicbox", "https://magicbox.imejl.sk/",
+                        "store", "bruenor.magicbox.MainActivity", "path"),
+                retroArch("dos", "dosbox_pure_libretro_android.so"));
+        put("scummvm", pathApp("scummvm", "ScummVM", "org.scummvm.scummvm",
+                        "https://www.scummvm.org/downloads/", "official",
+                        "org.scummvm.scummvm.SplashActivity", "path"));
+
+        // Systems with no maintained direct-launch Android emulator at all.
+        // These stay explicit so Lucent never pretends an abandoned or
+        // nonexistent build can be installed or launched: Xenia (xbox/xbox360)
+        // has no Android port, and no maintained Apple II emulator ships an
+        // Android launch surface. (PS3 now routes to aPS3e above.)
+        unsupported("apple2 xbox xbox360");
     }
 
-    private static void add(String id, String name, String systems, String packages,
-                            String source, String delivery, boolean directLaunch) {
-        Entry entry = new Entry(id, name, systems, packages, source, delivery, directLaunch);
-        ENTRIES.add(entry);
-        for (String system : entry.systems) BY_SYSTEM.put(system, entry);
+    // ---- Option builders -----------------------------------------------------
+
+    /** emu-ex-plus-alpha family: boots directly through ACTION_VIEW on the ROM. */
+    private static Option emuEx(String id, String name, String packages) {
+        return new Option(id, name, packages,
+                "https://www.explusalpha.com/contents/emuex", "store",
+                DELIVERY_ACTION_VIEW, "android.intent.action.VIEW",
+                "com.imagine.BaseActivity", "", null, "");
     }
 
-    private static void unsupported(String id, String name, String systems) {
-        add(id, name, systems, "", "", "unsupported", false);
+    private static Option mdEmu() {
+        return emuEx("mdemu", "MD.emu", "com.explusalpha.MdEmu");
     }
 
-    static Entry forSystem(String folder) { return BY_SYSTEM.get(folder); }
+    /** A path-accepting standalone emulator: --es <romExtraKey> "{file.path}". */
+    private static Option pathApp(String id, String name, String packages, String source,
+                                  String sourceType, String activity, String romExtraKey) {
+        return new Option(id, name, packages, source, sourceType,
+                DELIVERY_FILE_PATH, "android.intent.action.MAIN", activity, romExtraKey, null, "");
+    }
 
-    static List<Entry> missingFor(Context context, Set<String> activeSystems) {
-        List<Entry> missing = new ArrayList<>();
-        Set<String> seen = new LinkedHashSet<>();
+    /** Scoped-storage emulator that needs a content URI, routed via the trampoline. */
+    private static Option contentUri(String id, String name, String packages, String source,
+                                     String sourceType, String activity) {
+        return new Option(id, name, packages, source, sourceType,
+                DELIVERY_CONTENT_URI, "android.intent.action.VIEW", activity, "", null, "");
+    }
+
+    /**
+     * RetroArch is a valid EXTERNAL option (the historical ban was only on
+     * building Lucent's own UI on top of RetroArch). It boots straight into the
+     * ROM when both ROM and LIBRETRO core path are supplied, so it is only
+     * listed for a system with a known libretro core.
+     */
+    private static Option retroArch(String system, String coreLibrary) {
+        Map<String, String> extras = new LinkedHashMap<>();
+        // LIBRETRO is completed at command-build time with the installed package
+        // so the core path resolves against the correct RetroArch flavour.
+        return new Option("retroarch-" + system, "RetroArch",
+                "com.retroarch.aarch64 com.retroarch",
+                "https://play.google.com/store/apps/details?id=com.retroarch", "store",
+                DELIVERY_FILE_PATH, "android.intent.action.MAIN",
+                "com.retroarch.browser.retroactivity.RetroActivityFuture", "ROM", extras,
+                coreLibrary);
+    }
+
+    private static void put(String system, Option... options) {
+        BY_SYSTEM.put(system, Collections.unmodifiableList(new ArrayList<>(Arrays.asList(options))));
+    }
+
+    private static void unsupported(String systems) {
+        for (String system : words(systems))
+            BY_SYSTEM.put(system, Collections.singletonList(new Option(
+                    "no-standalone", "No maintained standalone Android emulator", "",
+                    "", "", DELIVERY_UNSUPPORTED, "", "", "", null, "")));
+    }
+
+    // ---- Public lookups ------------------------------------------------------
+
+    /** Ordered candidate options for a canonical system, or empty when unknown. */
+    static List<Option> optionsForSystem(String system) {
+        List<Option> options = BY_SYSTEM.get(canonical(system));
+        return options == null ? Collections.<Option>emptyList() : options;
+    }
+
+    /** True when at least one supported (launchable) external option exists. */
+    static boolean hasExternalOption(String system) {
+        for (Option option : optionsForSystem(system))
+            if (option.supported()) return true;
+        return false;
+    }
+
+    static Option optionForId(String system, String id) {
+        if (id == null) return null;
+        for (Option option : optionsForSystem(system))
+            if (option.id.equalsIgnoreCase(id)) return option;
+        return null;
+    }
+
+    /**
+     * Chooses the effective external option for a launch: the user's choice when
+     * it is still a valid catalog entry, otherwise the first installed option,
+     * otherwise the first supported option (so the install flow can begin).
+     */
+    static Option effectiveOption(Context context, String system, String chosenId) {
+        Option chosen = optionForId(system, chosenId);
+        if (chosen != null && chosen.supported()) return chosen;
+        Option firstSupported = null;
+        for (Option option : optionsForSystem(system)) {
+            if (!option.supported()) continue;
+            if (firstSupported == null) firstSupported = option;
+            if (!option.installedPackage(context).isEmpty()) return option;
+        }
+        return firstSupported;
+    }
+
+    /**
+     * Builds the metadata {@code launch:} command Pegasus executes for an
+     * external route. When the chosen emulator is installed the command boots
+     * the ROM directly into gameplay; when it is missing the command opens the
+     * emulator's official install source instead of failing. Returns "" only
+     * when the system has no supported external option (fail closed).
+     */
+    static String externalLaunchCommand(Context context, String system, String chosenId) {
+        Option option = effectiveOption(context, system, chosenId);
+        if (option == null || !option.supported()) return "";
+        String installed = option.installedPackage(context);
+        if (installed.isEmpty()) return installCommand(option);
+        return directLaunchCommand(option, installed);
+    }
+
+    /** The direct-into-gameplay recipe for an installed emulator. */
+    static String directLaunchCommand(Option option, String installedPackage) {
+        if (DELIVERY_CONTENT_URI.equals(option.delivery)) {
+            // Route through Lucent's own trampoline, which grants a one-time
+            // content URI to the scoped-storage target and forwards it.
+            return "am start -a " + RomLaunchActivity.ACTION_LAUNCH_FILE +
+                    " -n com.thorium.preview/com.thorium.preview.RomLaunchActivity" +
+                    " --es path \"{file.path}\"" +
+                    " --es target_package " + installedPackage +
+                    " --es target_activity " + option.component +
+                    " --es target_action " + option.action;
+        }
+        StringBuilder command = new StringBuilder("am start");
+        if (!option.action.isEmpty()) command.append(" -a ").append(option.action);
+        command.append(" -n ").append(installedPackage).append('/').append(option.component);
+        if (DELIVERY_ACTION_VIEW.equals(option.delivery)) {
+            command.append(" -d \"file://{file.path}\" -t application/octet-stream");
+        } else { // FILE_PATH
+            String key = option.romExtraKey.isEmpty() ? "ROM" : option.romExtraKey;
+            command.append(" --es ").append(key).append(" \"{file.path}\"");
+            if (!option.coreLibrary.isEmpty())
+                command.append(" --es LIBRETRO ")
+                        .append("/data/data/").append(installedPackage)
+                        .append("/cores/").append(option.coreLibrary);
+            for (Map.Entry<String, String> extra : option.extras.entrySet())
+                command.append(" --es ").append(extra.getKey()).append(' ').append(extra.getValue());
+        }
+        command.append(" --activity-clear-task");
+        return command.toString();
+    }
+
+    /**
+     * A launch that opens the emulator's official source so the user can install
+     * it. Play/store sources open the Play page; github/official sources open
+     * the release page in a browser. Never a silent install.
+     */
+    static String installCommand(Option option) {
+        String uri = installUri(option);
+        if (uri.isEmpty()) return "";
+        return "am start -a android.intent.action.VIEW -d " + uri;
+    }
+
+    static String installUri(Option option) {
+        String primaryPackage = option.packages.isEmpty() ? "" : option.packages.get(0);
+        if ("store".equals(option.sourceType) && !primaryPackage.isEmpty())
+            return "market://details?id=" + primaryPackage;
+        return option.source == null ? "" : option.source;
+    }
+
+    // ---- Install / status surfaces ------------------------------------------
+
+    /** Distinct supported emulators that are not installed for the active systems. */
+    static List<Option> missingFor(Context context, Set<String> activeSystems) {
+        List<Option> missing = new ArrayList<>();
+        Set<String> seen = new java.util.LinkedHashSet<>();
         for (String folder : activeSystems) {
-            Entry entry = forSystem(folder);
-            if (entry == null || "unsupported".equals(entry.delivery) ||
-                    !entry.installedPackage(context).isEmpty() || !seen.add(entry.id)) continue;
-            missing.add(entry);
+            for (Option option : optionsForSystem(folder)) {
+                if (!option.supported() || !option.installedPackage(context).isEmpty()) continue;
+                if (seen.add(option.id)) missing.add(option);
+            }
         }
         return missing;
     }
@@ -195,25 +441,35 @@ final class EmulatorCatalog {
             for (String folder : activeSystems) {
                 GameSystems.SystemDef system = GameSystems.byFolder(folder);
                 if (system == null) continue;
-                Entry emulator = forSystem(folder);
+                String canonical = canonical(folder);
+                List<Option> options = optionsForSystem(canonical);
                 JSONObject row = new JSONObject();
                 row.put("system", folder);
                 row.put("collection", system.collection);
-                if (emulator == null) {
-                    row.put("state", "unsupported");
-                    row.put("emulator", "No catalog entry");
-                } else {
-                    String installed = emulator.installedPackage(context);
-                    boolean supported = !"unsupported".equals(emulator.delivery);
+                boolean anySupported = hasExternalOption(canonical);
+                boolean anyInstalled = false;
+                JSONArray optionsJson = new JSONArray();
+                for (Option option : options) {
+                    if (!option.supported()) continue;
+                    String installed = option.installedPackage(context);
                     boolean present = !installed.isEmpty();
-                    row.put("state", present ? "ready" : supported ? "missing" : "unsupported");
-                    row.put("emulator", emulator.name);
-                    row.put("installedPackage", installed);
-                    row.put("source", emulator.source);
-                    row.put("delivery", emulator.delivery);
-                    row.put("directLaunch", emulator.directLaunch);
-                    if (present) ready++;
-                    else if (supported) missing++;
+                    anyInstalled |= present;
+                    JSONObject entry = new JSONObject();
+                    entry.put("id", option.id);
+                    entry.put("name", option.name);
+                    entry.put("installed", present);
+                    entry.put("installedPackage", installed);
+                    entry.put("source", option.source);
+                    entry.put("sourceType", option.sourceType);
+                    entry.put("delivery", option.delivery);
+                    optionsJson.put(entry);
+                }
+                row.put("state", !anySupported ? "unsupported" :
+                        anyInstalled ? "ready" : "missing");
+                row.put("options", optionsJson);
+                if (anySupported) {
+                    if (anyInstalled) ready++;
+                    else missing++;
                 }
                 systems.put(row);
             }
@@ -227,9 +483,15 @@ final class EmulatorCatalog {
         return response.toString();
     }
 
+    // ---- helpers -------------------------------------------------------------
+
+    private static String canonical(String value) {
+        return com.thorium.lucent.metadata.EngineSystemIdResolver.canonical(value);
+    }
+
     private static List<String> words(String value) {
         String trimmed = value == null ? "" : value.trim();
-        return trimmed.isEmpty() ? Collections.emptyList() :
+        return trimmed.isEmpty() ? Collections.<String>emptyList() :
                 Collections.unmodifiableList(Arrays.asList(trimmed.split("\\s+")));
     }
 

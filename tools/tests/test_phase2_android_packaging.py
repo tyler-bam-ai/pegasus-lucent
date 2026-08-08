@@ -68,7 +68,9 @@ class PhaseTwoAndroidPackagingTest(unittest.TestCase):
             'android:name="com.thorium.launchbridge.LaunchActivity"',
             self.build,
         )
-        self.assertNotIn(
+        # RomLaunchActivity is now the external-route content-URI trampoline
+        # (non-exported, no-history, excluded from recents) and IS packaged.
+        self.assertIn(
             'android:name="com.thorium.preview.RomLaunchActivity"',
             self.build,
         )

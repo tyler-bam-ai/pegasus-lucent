@@ -18,30 +18,36 @@ ALLOWED_ACTIVITIES = {
     MAIN_ACTIVITY,
     "com.thorium.preview.PreviewActivity",
     "com.thorium.preview.BrowserActivity",
+    # Non-exported, no-launcher content-URI trampoline for the per-system
+    # EXTERNAL route. It grants a one-time read URI and finishes immediately;
+    # its manifest properties are asserted below so it can never become a
+    # second launcher, a display-0 window, or a recents entry.
+    "com.thorium.preview.RomLaunchActivity",
 }
 
-# These identifiers belong to standalone emulator applications.  Engine names
-# and upstream notices are allowed in assets/native libraries, but no compiled
-# Java/Kotlin route in Lucent may know how to target another emulator package.
-FORBIDDEN_DEX_IDENTITIES = (
-    "com.retroarch",
-    "org.retroarch",
-    "org.ppsspp.ppsspp",
-    "org.dolphinemu",
-    "org.azahar_emu",
-    "org.citra.emu",
-    "com.flycast.emulator",
-    "com.reicast.emulator",
-    "com.armsx2",
-    "xyz.aethersx2.android",
-    "dev.legacy.eden_emulator",
-    "org.yuzu.yuzu_emu",
-    "info.cemu.Cemu",
-    "org.vita3k.emulator",
+# Standalone-emulator FRONTEND code must never be compiled into Lucent: Lucent
+# implements its own libretro host and never embeds another emulator's classes.
+# NOTE: since the per-system EXTERNAL route is now an allowed product feature,
+# a bare package STRING (e.g. "com.retroarch" as an `am start` target inside
+# EmulatorCatalog) is legitimate DATA. What stays forbidden is a compiled CLASS
+# from those packages, so the check below matches only the class-descriptor
+# form ("Lcom/retroarch/..."), never the dotted string constant.
+FORBIDDEN_DEX_CLASS_PACKAGES = (
+    "com/retroarch",
+    "org/retroarch",
+    "org/ppsspp/ppsspp",
+    "org/dolphinemu",
+    "org/azahar_emu",
+    "org/citra/emu",
+    "com/flycast/emulator",
+    "com/reicast/emulator",
+    "org/yuzu/yuzu_emu",
+    "org/vita3k/emulator",
 )
 
+# Superseded pre-bridge Activity trampolines. RomLaunchActivity is intentionally
+# NOT here anymore: it is Lucent's own external-route trampoline (see above).
 FORBIDDEN_DEX_CLASSES = (
-    "RomLaunchActivity",
     "InternalGameLaunchActivity",
     "LucentGameActivity",
     "QualificationLaunchActivity",
@@ -129,11 +135,16 @@ def verify_manifest(xmltree: str) -> list[str]:
         if name in by_name:
             errors.append(f"manifest repeats Activity {name}")
         by_name[name] = block
-    if set(by_name) != ALLOWED_ACTIVITIES:
+    # Every declared Activity must be one Lucent owns; the external-route
+    # trampoline is permitted but not required, so this is a subset check.
+    unexpected = set(by_name) - ALLOWED_ACTIVITIES
+    if unexpected:
         errors.append(
-            "manifest Activity set differs from Lucent main/browser/preview boundary: "
-            + repr(sorted(by_name))
+            "manifest declares Activities outside the Lucent boundary: "
+            + repr(sorted(unexpected))
         )
+    if MAIN_ACTIVITY not in by_name:
+        errors.append("manifest is missing the Lucent MainActivity")
 
     main = by_name.get(MAIN_ACTIVITY, "")
     if 'android:launchMode' not in main or \
@@ -158,6 +169,20 @@ def verify_manifest(xmltree: str) -> list[str]:
     browser = by_name.get("com.thorium.preview.BrowserActivity", "")
     if not re.search(r'android:exported[^\n]*\(type 0x12\)0x0', browser):
         errors.append("Lucent BrowserActivity must be non-exported")
+
+    # The external-route trampoline must be a transient, non-exported, no-recents
+    # Activity with no launcher/home category, so it cannot become a second
+    # display-0 window or a second recents entry.
+    trampoline = by_name.get("com.thorium.preview.RomLaunchActivity", "")
+    if trampoline:
+        if not re.search(r'android:exported[^\n]*\(type 0x12\)0x0', trampoline):
+            errors.append("RomLaunchActivity trampoline must be non-exported")
+        if not re.search(r'android:excludeFromRecents[^\n]*0xffffffff', trampoline):
+            errors.append("RomLaunchActivity trampoline must be excluded from recents")
+        if '"android.intent.category.LAUNCHER"' in trampoline or \
+                '"android.intent.category.HOME"' in trampoline or \
+                '"android.intent.category.LEANBACK_LAUNCHER"' in trampoline:
+            errors.append("RomLaunchActivity trampoline must not carry a launcher category")
     # Internal game launches are intercepted inside MainActivity.launchAmCommand;
     # no exported receiver or second Activity is part of the product boundary.
     if any(_raw_attribute(block, "name") ==
@@ -176,10 +201,11 @@ def verify_dex(apk: Path) -> list[str]:
         if not dex_names:
             return ["APK contains no DEX payload"]
         dex = b"\n".join(archive.read(name) for name in dex_names)
-    for identity in FORBIDDEN_DEX_IDENTITIES:
-        forms = {identity.encode(), identity.replace(".", "/").encode()}
-        if any(form in dex for form in forms):
-            errors.append(f"DEX contains standalone emulator route {identity}")
+    for package in FORBIDDEN_DEX_CLASS_PACKAGES:
+        # Class descriptors appear as "L<slashed package>/...;". A dotted
+        # package string used only as an am-start target never produces this.
+        if b"L" + package.encode() + b"/" in dex:
+            errors.append(f"DEX embeds standalone emulator classes {package}")
     for class_name in FORBIDDEN_DEX_CLASSES:
         if class_name.encode() in dex:
             errors.append(f"DEX contains legacy game-launch component {class_name}")

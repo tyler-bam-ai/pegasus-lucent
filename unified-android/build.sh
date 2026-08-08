@@ -241,8 +241,10 @@ MANIFEST_COMPONENTS="$BUILD_DIR/work/manifest-components.xml"
 printf '%s\n' \
 '        <activity android:name="com.thorium.preview.PreviewActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode" android:excludeFromRecents="true" android:launchMode="singleTop" android:resizeableActivity="true" android:screenOrientation="landscape" android:taskAffinity="com.thorium.preview.preview" android:exported="false"/>' \
 '        <activity android:name="com.thorium.preview.BrowserActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode" android:exported="false"/>' \
+'        <activity android:name="com.thorium.preview.RomLaunchActivity" android:excludeFromRecents="true" android:noHistory="true" android:taskAffinity="com.thorium.preview.romlaunch" android:exported="false"/>' \
 '        <service android:name="com.thorium.preview.PreviewService" android:exported="false"/>' \
 '        <provider android:name="com.thorium.preview.UpdateFileProvider" android:authorities="com.thorium.preview.updates" android:exported="false" android:grantUriPermissions="true"/>' \
+'        <provider android:name="com.thorium.preview.RomFileProvider" android:authorities="com.thorium.preview.roms" android:exported="false" android:grantUriPermissions="true"/>' \
 '        <receiver android:name="com.thorium.preview.BootReceiver" android:enabled="true" android:exported="true"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/><action android:name="android.intent.action.MY_PACKAGE_REPLACED"/></intent-filter></receiver>' \
     > "$MANIFEST_COMPONENTS"
 # Qualification launches target this same singleTask MainActivity explicitly;
@@ -421,10 +423,7 @@ python3 "$PROJECT_DIR/tools/generate_engine_artifact_manifest.py" \
 # InWindowGameHost.
 SOURCES=$(find "$ROOT_DIR/android-companion/src" "$ROOT_DIR/android-launch-bridge/src" \
     "$PROJECT_DIR/src" "$PROJECT_DIR/stubs" -name '*.java' \
-    ! -path '*/com/thorium/preview/RomLaunchActivity.java' \
-    ! -path '*/com/thorium/preview/RomFileProvider.java' \
     ! -path '*/com/thorium/preview/MainActivity.java' \
-    ! -path '*/com/thorium/preview/EmulatorCatalog.java' \
     ! -path '*/com/thorium/launchbridge/LaunchActivity.java' \
     ! -path '*/com/thorium/launchbridge/RomFileProvider.java' \
     ! -path '*/com/thorium/launchbridge/StopButtonService.java' \

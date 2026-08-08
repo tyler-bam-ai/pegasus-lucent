@@ -54,7 +54,7 @@ final class LaunchMetadataRouter {
     private static boolean rewrite(Context context, File file) throws Exception {
         String text = read(file);
         String updated = MetadataLaunchNormalizer.rewrite(text, system ->
-                GameLaunchRouter.metadataCommand(context, system));
+                EngineRouteStore.launchCommand(context, system));
         if (updated.equals(text)) return false;
         writeAtomic(file, updated);
         return true;

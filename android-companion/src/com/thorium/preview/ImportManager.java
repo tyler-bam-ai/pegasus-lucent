@@ -2619,11 +2619,42 @@ final class ImportManager {
     }
 
     private String launchCommand(String system) {
-        if (GameLaunchRouter.supportsSystem(context, system))
-            return GameLaunchRouter.metadataCommand(context, system);
-        // Unsupported engines fail closed. Lucent never falls back to a
-        // standalone emulator, secondary Activity, or another Android task.
-        return "";
+        // EngineRouteStore is the single source of truth: internal by default
+        // where a bundled engine exists, external as a per-system user choice or
+        // automatically for a system with no internal engine. It fails closed
+        // (returns "") only when neither an internal engine nor any supported
+        // external emulator exists for the system.
+        return EngineRouteStore.launchCommand(context, system);
+    }
+
+    /**
+     * Re-emits every system's collection launch command after a route change.
+     * Fresh metadata is regenerated from the registry (picking up the new route
+     * via {@link #launchCommand}) and any on-disk metadata is normalized, then a
+     * library reload is requested so Pegasus reads the new {@code launch:} lines.
+     */
+    synchronized boolean rewriteLaunchRoutes() {
+        try {
+            JSONArray registry = readRegistry();
+            writeMetadata(registry);
+            LaunchMetadataRouter.normalize(context);
+            requestLibraryReload();
+            return true;
+        } catch (Exception error) {
+            Log.e(TAG, "Unable to rewrite launch routes after a route change", error);
+            return false;
+        }
+    }
+
+    /** Flags the current status so the next /import/reload refreshes Lucent. */
+    private void requestLibraryReload() {
+        synchronized (statusLock) {
+            try {
+                status.put("needsReload", true);
+                status.put("message", "Launch route updated • refreshing Lucent library…");
+                status.put("updatedAt", System.currentTimeMillis());
+            } catch (Exception ignored) {}
+        }
     }
 
     private boolean installed(String packageName) {
