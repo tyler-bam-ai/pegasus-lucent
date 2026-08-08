@@ -52,6 +52,10 @@ public final class ExperimentalGlesRenderLoopTest {
         @Override public void setPointer(int port, short x, short y, boolean pressed) {
             call("pointer");
         }
+        @Override public void setControllerPortDevice(int port, int device) {
+            call("port-device:" + port + ":0x" + Integer.toHexString(device));
+        }
+        @Override public void reset() { call("reset"); }
         @Override public short[] drainAudio(int maxFrames) {
             call("audio"); return new short[] {7, -7};
         }
@@ -129,6 +133,11 @@ public final class ExperimentalGlesRenderLoopTest {
                 }, 1_000_000L);
         activeLoop.set(loop);
         check(ready.await(2, TimeUnit.SECONDS), "render loop did not initialize");
+        // Wii/GameCube run on this path: the Nunchuk device and the power
+        // cycle must both be marshalled onto the render-owning thread, which
+        // FakeHost.call() asserts for every entry point.
+        loop.setControllerPortDevice(0, (3 << 8) | 1);
+        loop.reset();
         check(loop.avInfo().sampleRate == 48000.0, "render-thread AV query failed");
         check(java.util.Arrays.equals(loop.drainAudio(8), new short[] {7, -7}),
                 "render-thread audio drain failed");
@@ -172,7 +181,9 @@ public final class ExperimentalGlesRenderLoopTest {
               host.calls.contains("serialize") && host.calls.contains("unserialize") &&
               host.calls.contains("read-save") && host.calls.contains("write-save") &&
               host.calls.contains("recreate") && host.calls.contains("pause") &&
-              host.calls.contains("detach") && host.calls.contains("close"),
+              host.calls.contains("detach") && host.calls.contains("close") &&
+              host.calls.contains("port-device:0:0x301") &&
+              host.calls.contains("reset"),
               "incomplete render lifecycle: " + host.calls);
         check(host.owner != Thread.currentThread(), "GLES work ran on caller thread");
         boolean closedRejected = false;

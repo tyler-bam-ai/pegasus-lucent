@@ -26,6 +26,7 @@ FocusScope {
     property bool dualScreenDevice: true
     property string previewPlacementMode: "auto" // auto, bottom, top, off
     property bool previewSoundEnabled: true
+    property bool soundEffectsEnabled: true
     // Single-screen devices can exchange the PIP and box-art columns. The
     // preference may persist across hardware, but is never applied or exposed
     // while a physical lower display is available.
@@ -76,7 +77,7 @@ FocusScope {
     // Read only by the hidden pre-3.0.40 settings markup retained below.
     property bool systemLedUseDeviceBrightness: false
     property string startViewPreference: "cover"
-    readonly property int baseSettingsOptionCount: dualScreenDevice ? 15 : 16
+    readonly property int baseSettingsOptionCount: dualScreenDevice ? 16 : 17
     // Lucent's unified build has one in-window engine policy. Standalone
     // emulator selection would break the one-app/one-window contract, so the
     // legacy per-system external controls are not part of the visible settings.
@@ -1684,6 +1685,13 @@ FocusScope {
                 (previewSoundEnabled ? "1" : "0"))
     }
 
+    function setSoundEffectsEnabled(enabled) {
+        soundEffectsEnabled = Boolean(enabled)
+        api.memory.set("lucentSoundEffects", soundEffectsEnabled)
+        requestPreviewEndpoint("settings/sfx?enabled=" +
+                (soundEffectsEnabled ? "1" : "0"))
+    }
+
     function setSingleScreenMediaSwapped(swapped) {
         if (dualScreenDevice) return
         singleScreenMediaSwapped = Boolean(swapped)
@@ -2027,7 +2035,7 @@ FocusScope {
                 "SYSTEM-MATCHED STICK LEDS", "STICK LED BRIGHTNESS",
                 "START VIEW", "COVER VIEW ROWS", "COVER ROW ORDER",
                 "RIGHT STICK VIEW SWITCHING", "VIEW TRANSITIONS",
-                "ABOUT LUCENT", "UPDATE LIBRARY & LUCENT",
+                "SOUND EFFECTS", "ABOUT LUCENT", "UPDATE LIBRARY & LUCENT",
                 "PIP / BOX ART ORDER"]
         return titles[index]
     }
@@ -2047,6 +2055,7 @@ FocusScope {
             "Reorder Systems, Continue, Most Played, Recently Added, and score shelves",
             "Up: Cover  •  Down: List  •  Left/Right: All Systems then systems",
             "Optional slide, fade, and scale motion when changing Lucent views",
+            "Quiet blips while moving, choosing, and going back in menus",
             "Pegasus attribution, licenses, trademarks, and Lucent version",
             "Scan games and check GitHub for app and theme updates",
             "Swap the video and box-art positions on single-screen devices"
@@ -2069,9 +2078,10 @@ FocusScope {
         if (index === 10) return "EDIT"
         if (index === 11) return rightStickViewSwitchingEnabled ? "ON" : "OFF"
         if (index === 12) return viewTransitionsEnabled ? "ON" : "OFF"
-        if (index === 13) return "VIEW"
-        if (index === 14) return "RUN"
-        if (index === 15 && !dualScreenDevice)
+        if (index === 13) return soundEffectsEnabled ? "ON" : "OFF"
+        if (index === 14) return "VIEW"
+        if (index === 15) return "RUN"
+        if (index === 16 && !dualScreenDevice)
             return singleScreenMediaSwapped ? "BOX LEFT  •  VIDEO RIGHT" :
                                               "VIDEO LEFT  •  BOX RIGHT"
         return ""
@@ -2109,15 +2119,17 @@ FocusScope {
         } else if (settingsIndex === 12) {
             setViewTransitions(!viewTransitionsEnabled)
         } else if (settingsIndex === 13) {
-            aboutOpen = true
+            setSoundEffectsEnabled(!soundEffectsEnabled)
         } else if (settingsIndex === 14) {
+            aboutOpen = true
+        } else if (settingsIndex === 15) {
             updatePromptDismissed = false
             importState = "idle"
             importStatusInitialized = true
             importToastVisible = true
             startImportScan()
             requestPreviewEndpoint("update/check")
-        } else if (settingsIndex === 15 && !dualScreenDevice) {
+        } else if (settingsIndex === 16 && !dualScreenDevice) {
             setSingleScreenMediaSwapped(!singleScreenMediaSwapped)
         }
     }
@@ -2924,6 +2936,11 @@ FocusScope {
         }
         requestPreviewEndpoint("settings/sound?enabled=" +
                 (previewSoundEnabled ? "1" : "0"))
+        // Menu sound effects are on by default; only an explicit OFF persists.
+        soundEffectsEnabled = api.memory.has("lucentSoundEffects") ?
+                Boolean(api.memory.get("lucentSoundEffects")) : true
+        requestPreviewEndpoint("settings/sfx?enabled=" +
+                (soundEffectsEnabled ? "1" : "0"))
         systemLedCommit.restart()
         var rememberedSystem = api.memory.has("thoriumSystem") ? api.memory.get("thoriumSystem") : 0
         // Version 1 inserts All Systems ahead of the old Arcade index. Shift a

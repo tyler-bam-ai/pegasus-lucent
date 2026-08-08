@@ -89,6 +89,17 @@ public final class LibretroHost implements Closeable {
     }
 
     /**
+     * Power-cycles the loaded content in place (libretro {@code retro_reset}).
+     * Unlike an unload/load pair this keeps the core's battery-backed save RAM
+     * in memory, so a reset behaves like the console's reset button rather
+     * than pulling the cartridge.
+     */
+    public synchronized void reset() {
+        checkOpen();
+        nativeReset(handle);
+    }
+
+    /**
      * Unloads the active game. Cores with a Lucent exit-persistence extension
      * may reject this call; in that case the host and game remain open.
      */
@@ -233,6 +244,7 @@ public final class LibretroHost implements Closeable {
     private static native void nativeLoadGame(long handle, String gamePath);
     private static native void nativeSetControllerPortDevice(
             long handle, int port, int device);
+    private static native void nativeReset(long handle);
     private static native void nativeUnloadGame(long handle);
     private static native void nativeRunFrame(long handle);
     private static native void nativeSetPaused(long handle, boolean paused);

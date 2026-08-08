@@ -81,6 +81,16 @@ Java_com_thorium_preview_LibretroHost_nativeSetControllerPortDevice(
 }
 
 JNIEXPORT void JNICALL
+Java_com_thorium_preview_LibretroHost_nativeReset(
+        JNIEnv *env, jclass type, jlong handle) {
+    (void)type;
+    char error[ERROR_SIZE] = {0};
+    if (!lucent_retro_reset(from_handle(handle), error, sizeof(error)) &&
+            !(*env)->ExceptionCheck(env))
+        throw_state(env, error);
+}
+
+JNIEXPORT void JNICALL
 Java_com_thorium_preview_LibretroHost_nativeUnloadGame(
         JNIEnv *env, jclass type, jlong handle) {
     (void)type;
@@ -399,6 +409,29 @@ Java_com_thorium_preview_ExperimentalGlesLibretroHost_nativeLoadGameGles(
     bool success = session && session->host && path &&
             lucent_retro_load_game(session->host, path, error, sizeof(error));
     if (path) (*env)->ReleaseStringUTFChars(env, game_path, path);
+    if (!success && !(*env)->ExceptionCheck(env)) throw_state(env, error);
+}
+
+JNIEXPORT void JNICALL
+Java_com_thorium_preview_ExperimentalGlesLibretroHost_nativeSetControllerPortDeviceGles(
+        JNIEnv *env, jclass type, jlong handle, jint port, jint device) {
+    (void)type;
+    char error[ERROR_SIZE] = {0};
+    lucent_gles_jni_session *session = from_gles_handle(handle);
+    bool success = session && session->host &&
+            lucent_retro_set_controller_port_device(session->host,
+                    (unsigned)port, (unsigned)device, error, sizeof(error));
+    if (!success && !(*env)->ExceptionCheck(env)) throw_state(env, error);
+}
+
+JNIEXPORT void JNICALL
+Java_com_thorium_preview_ExperimentalGlesLibretroHost_nativeResetGles(
+        JNIEnv *env, jclass type, jlong handle) {
+    (void)type;
+    char error[ERROR_SIZE] = {0};
+    lucent_gles_jni_session *session = from_gles_handle(handle);
+    bool success = session && session->host &&
+            lucent_retro_reset(session->host, error, sizeof(error));
     if (!success && !(*env)->ExceptionCheck(env)) throw_state(env, error);
 }
 

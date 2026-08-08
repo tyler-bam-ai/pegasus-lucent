@@ -3,6 +3,7 @@ package com.thorium.preview;
 import android.app.Activity;
 import android.app.Application;
 import android.content.Intent;
+import android.media.AudioManager;
 import android.os.Bundle;
 
 import com.thorium.preview.game.InternalEngineBootstrap;
@@ -35,10 +36,12 @@ public final class LucentApplication
         startLucentService();
         registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks() {
             @Override public void onActivityResumed(Activity activity) {
+                routeVolumeKeysToMusicStream(activity);
                 rememberMainActivity(activity);
                 completeFirstSetupIfNeeded(activity);
             }
             @Override public void onActivityCreated(Activity activity, Bundle state) {
+                routeVolumeKeysToMusicStream(activity);
                 rememberMainActivity(activity);
             }
             @Override public void onActivityStarted(Activity activity) {
@@ -52,6 +55,32 @@ public final class LucentApplication
                 if (remembered == activity) liveMainActivity = new WeakReference<>(null);
             }
         });
+    }
+
+    /**
+     * Points the hardware volume keys at the one stream Lucent actually plays
+     * on.
+     *
+     * Everything audible in this process is STREAM_MUSIC: both engine
+     * AudioTracks (LibretroEngineSession/PpssppGlesEngineSession
+     * createAudioTrack) and the preview MediaPlayer. Without this call Android
+     * gives an Activity whose window has no active stream the *default* target
+     * — ring/notification volume on most devices — so the keys move a stream
+     * nothing plays on while STREAM_MUSIC keeps whatever level it last had.
+     * That is the reported "turn it down and it only goes part-way, turn it up
+     * and it stays low", and the silent-menus case is simply STREAM_MUSIC
+     * having been left at zero.
+     *
+     * Every Activity in the process is covered here rather than in each
+     * onCreate: the callbacks are registered in Application.onCreate, before
+     * any Activity of this process exists, so MainActivity (whose Java class is
+     * Pegasus's and is only reachable through smali patching), PreviewActivity,
+     * BrowserActivity, and RomLaunchActivity all get it with no extra patch.
+     * It is applied again on resume so a re-created or restored Activity can
+     * never come back with the platform default.
+     */
+    private static void routeVolumeKeysToMusicStream(Activity activity) {
+        if (activity != null) activity.setVolumeControlStream(AudioManager.STREAM_MUSIC);
     }
 
     /** Returns Lucent's existing Qt activity without creating or resuming one. */

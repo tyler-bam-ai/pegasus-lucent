@@ -296,6 +296,12 @@ cp "$BUILD_DIR/native/arm64-v8a/liblucent_libretro_host.so" \
     "$DECODED/lib/arm64-v8a/liblucent_libretro_host.so"
 cp "$BUILD_DIR/native/arm64-v8a/liblucent_vulkan_host.so" \
     "$DECODED/lib/arm64-v8a/liblucent_vulkan_host.so"
+# The Phase 3 loader is packaged with the other Lucent hosts, not with the
+# adapter itself: NativeAdapterHost loads it in its static initializer, so a
+# build that stages an adapter without this library fails at dlopen with the
+# engine already approved.
+cp "$BUILD_DIR/native/arm64-v8a/liblucent_native_adapter_host.so" \
+    "$DECODED/lib/arm64-v8a/liblucent_native_adapter_host.so"
 # The engine-artifact manifests must list exactly the cores this flag
 # combination stages: zero for the no-cores release path, and the length of
 # the hardcoded core lists for qualification paths. Count each staged copy so

@@ -38,6 +38,8 @@ public final class ExperimentalGlesRenderLoop implements Closeable {
         void setJoypadButton(int port, int button, boolean pressed);
         void setAnalogAxis(int port, int index, int id, float value);
         void setPointer(int port, short x, short y, boolean pressed);
+        void setControllerPortDevice(int port, int device);
+        void reset();
         short[] drainAudio(int maxFrames);
         ExperimentalGlesLibretroHost.AvInfo avInfo();
         boolean stateReady();
@@ -128,6 +130,10 @@ public final class ExperimentalGlesRenderLoop implements Closeable {
                     throw new UnsupportedOperationException(
                             "GLES pointer routing is not configured");
                 }
+                @Override public void setControllerPortDevice(int port, int device) {
+                    nativeHost.setControllerPortDevice(port, device);
+                }
+                @Override public void reset() { nativeHost.reset(); }
                 @Override public short[] drainAudio(int maxFrames) {
                     return nativeHost.drainAudio(maxFrames);
                 }
@@ -192,6 +198,18 @@ public final class ExperimentalGlesRenderLoop implements Closeable {
                 @Override public void setPointer(int port, short x, short y,
                                                  boolean pressed) {
                     nativeHost.setPointer(port, x, y, pressed);
+                }
+                // The Vulkan session's JNI surface carries neither call. Both
+                // fail loudly rather than silently doing nothing: the systems
+                // routed here (PS2, 3DS) are plain RetroPads, so the port
+                // device is never requested, and reset reports honestly.
+                @Override public void setControllerPortDevice(int port, int device) {
+                    throw new UnsupportedOperationException(
+                            "Vulkan session exposes no controller port device");
+                }
+                @Override public void reset() {
+                    throw new UnsupportedOperationException(
+                            "Vulkan session exposes no reset");
                 }
                 @Override public short[] drainAudio(int maxFrames) {
                     return nativeHost.drainAudio(maxFrames);
@@ -431,6 +449,25 @@ public final class ExperimentalGlesRenderLoop implements Closeable {
             requireReady();
             host.setPointer(port, x, y, pressed);
         });
+    }
+
+    /**
+     * Selects the controller a core emulates on a port, on the render-owning
+     * thread. Synchronous: the caller runs right after the game load and the
+     * first frame must not be scheduled before the device is attached, or a
+     * Nunchuk-only Wii title boots deaf.
+     */
+    public void setControllerPortDevice(final int port, final int device) {
+        call(() -> { host.setControllerPortDevice(port, device); return null; });
+    }
+
+    /**
+     * Power-cycles the loaded content on the render-owning thread. Synchronous
+     * so a caller can report whether the reset actually happened instead of
+     * claiming one that a later frame may still reject.
+     */
+    public void reset() {
+        call(() -> { host.reset(); return null; });
     }
 
     /** Drains native PCM on the render thread; safe to call from any thread. */

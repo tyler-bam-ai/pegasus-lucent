@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -50,6 +51,10 @@ public final class BrowserActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        // Web audio plays on STREAM_MUSIC, the same stream as previews and
+        // gameplay. Keep the hardware keys on it here too, so leaving the
+        // browser never returns the user to a differently-adjusted volume.
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
         getWindow().setStatusBarColor(BAR_COLOR);
         getWindow().setNavigationBarColor(BAR_COLOR);
 

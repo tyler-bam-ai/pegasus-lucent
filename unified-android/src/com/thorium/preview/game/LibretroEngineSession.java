@@ -385,20 +385,25 @@ public final class LibretroEngineSession implements EngineSession,
     }
 
     /**
-     * Power-cycles the loaded content in place.
+     * Power-cycles the loaded content in place through libretro's own
+     * retro_reset, now that the native host exposes it.
      *
-     * Lucent's native host resolves retro_reset but exposes no JNI entry point
-     * for it, and that file is owned elsewhere, so this uses the reset the Java
-     * boundary can already reach: unload the game and load it again on the same
-     * core instance. Battery saves are written out first and restored after, so
-     * a reset behaves like a console power cycle rather than erasing the
-     * cartridge.
+     * Battery save RAM is written out first but deliberately not written back:
+     * retro_reset is the console's reset button, and a console reset leaves
+     * the cartridge's battery memory exactly as the game left it. Pushing the
+     * last persisted copy back over the core's live SRAM would silently roll
+     * play back to whenever that copy was taken. The persist before the reset
+     * is only insurance — the on-disk battery file stays current if the
+     * process dies before the next checkpoint.
      *
-     * The unload/load pair holds the host monitor for its whole duration.
-     * LibretroHost's own methods are synchronized on that same object, so a
-     * frame already in flight completes before the swap and the next frame can
-     * only observe the freshly loaded game — never the window in between, which
-     * the native host fails closed on ("cannot run without a loaded game").
+     * The call holds the host monitor. LibretroHost's own methods are
+     * synchronized on that same object, so a frame already in flight completes
+     * before the reset and no frame observes a half-reset core.
+     *
+     * If the core has no usable retro_reset the old unload/reload power cycle
+     * still runs, rather than leaving the game wedged. That path does destroy
+     * core memory, so it keeps the save-RAM restore and the port-device
+     * reattach that loading a game requires.
      */
     @Override public boolean reset() {
         GameLaunchRequest launch = request;
@@ -412,30 +417,18 @@ public final class LibretroEngineSession implements EngineSession,
                     LibretroHost open = host;
                     if (open == null || stopping.get() || released.get()) return;
                     try {
-                        File game = resolveGameFile(launch.contentUri);
                         synchronized (open) {
-                            // A core carrying Lucent's exit-persistence
-                            // extension may refuse the unload; it then throws
-                            // and the game keeps running untouched.
                             persistSaveRam(open);
-                            open.unloadGame();
-                            open.loadGame(game);
-                            // Loading put port 0 back to a plain RetroPad, so
-                            // a system with a different controller has to
-                            // reattach it or the reset game takes no input.
-                            int portDevice = LibretroJoypadLayout
-                                    .portDeviceFor(launch.systemId);
-                            if (portDevice != LibretroJoypadLayout.RETRO_DEVICE_JOYPAD)
-                                open.setControllerPortDevice(0, portDevice);
-                            if (saveRamFile != null) restoreSaveRam(open, saveRamFile);
+                            open.reset();
                         }
                         flushAudioAfterRestore();
                         Log.i(TAG, "Reset applied engine=" + entry.id +
                                 " system=" + launch.systemId + " marker=reset");
                     } catch (Throwable failure) {
-                        Log.w(TAG, "Reset rejected engine=" + entry.id +
-                                " system=" + launch.systemId +
-                                " marker=reset-failure", failure);
+                        Log.w(TAG, "Native reset rejected; reloading content " +
+                                "engine=" + entry.id + " system=" +
+                                launch.systemId, failure);
+                        reloadAsReset(open, launch, failure);
                     }
                 });
             } catch (java.util.concurrent.RejectedExecutionException rejected) {
@@ -443,6 +436,41 @@ public final class LibretroEngineSession implements EngineSession,
             }
         }
         return true;
+    }
+
+    /** Unload/reload power cycle used only when retro_reset is unavailable. */
+    private void reloadAsReset(LibretroHost open, GameLaunchRequest launch,
+                               Throwable resetFailure) {
+        try {
+            File game = resolveGameFile(launch.contentUri);
+            synchronized (open) {
+                // A core carrying Lucent's exit-persistence extension may
+                // refuse the unload; it then throws and the game keeps
+                // running untouched.
+                persistSaveRam(open);
+                open.unloadGame();
+                open.loadGame(game);
+                // Loading put port 0 back to a plain RetroPad, so a system
+                // with a different controller has to reattach it or the
+                // reset game takes no input.
+                int portDevice = LibretroJoypadLayout
+                        .portDeviceFor(launch.systemId);
+                if (portDevice != LibretroJoypadLayout.RETRO_DEVICE_JOYPAD)
+                    open.setControllerPortDevice(0, portDevice);
+                // Unloading destroyed the core's SRAM, so unlike the
+                // retro_reset path this one must put it back.
+                if (saveRamFile != null) restoreSaveRam(open, saveRamFile);
+            }
+            flushAudioAfterRestore();
+            Log.i(TAG, "Reset applied engine=" + entry.id +
+                    " system=" + launch.systemId + " marker=reset");
+        } catch (Throwable failure) {
+            Log.w(TAG, "Reset rejected engine=" + entry.id +
+                    " system=" + launch.systemId +
+                    " nativeReset=" + (resetFailure == null ? "none" :
+                            String.valueOf(resetFailure.getMessage())) +
+                    " marker=reset-failure", failure);
+        }
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {

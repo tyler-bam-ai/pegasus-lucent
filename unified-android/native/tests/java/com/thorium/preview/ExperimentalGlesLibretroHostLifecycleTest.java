@@ -24,6 +24,10 @@ public final class ExperimentalGlesLibretroHostLifecycleTest {
             calls.add("create"); return 41L;
         }
         @Override public void loadGame(long handle, String game) { calls.add("load"); }
+        @Override public void setControllerPortDevice(long handle, int port, int device) {
+            calls.add("port-device:" + port + ":0x" + Integer.toHexString(device));
+        }
+        @Override public void reset(long handle) { calls.add("reset"); }
         @Override public void attach(long handle, Surface surface) { calls.add("attach"); }
         @Override public void recreate(long handle, Surface surface) { calls.add("recreate"); }
         @Override public boolean runAndPresent(long handle) {
@@ -91,6 +95,9 @@ public final class ExperimentalGlesLibretroHostLifecycleTest {
         ExperimentalGlesLibretroHost host = new ExperimentalGlesLibretroHost(
                 core, root, system, save, bindings);
         host.loadGame(game);
+        // Wii and GameCube run on this path; the Nunchuk device must reach the
+        // core right after the load, before any frame is presented.
+        host.setControllerPortDevice(0, (3 << 8) | 1);
         boolean invalidSurfaceRejected = false;
         try { host.attachSurface(new Surface(false)); }
         catch (IllegalArgumentException expected) { invalidSurfaceRejected = true; }
@@ -119,6 +126,7 @@ public final class ExperimentalGlesLibretroHostLifecycleTest {
         host.writeSaveRam(new byte[] {8, 5});
         check(Arrays.equals(host.readSaveRam(), new byte[] {8, 5}),
                 "save RAM write mismatch");
+        host.reset();
         host.pause();
         bindings.loseNextFrame = true;
         boolean contextLost = false;
@@ -135,10 +143,11 @@ public final class ExperimentalGlesLibretroHostLifecycleTest {
         host.close();
         host.close();
         check(bindings.calls.equals(Arrays.asList(
-                "create", "load", "attach", "resume", "button:0:0:true",
+                "create", "load", "port-device:0:0x301", "attach", "resume",
+                "button:0:0:true",
                 "axis:0:0:0:32767", "run-present", "info",
                 "av", "audio:8", "serialize", "unserialize", "serialize",
-                "read-save", "write-save", "read-save",
+                "read-save", "write-save", "read-save", "reset",
                 "pause", "run-present", "recreate", "resume", "run-present",
                 "pause", "detach", "close")),
                 "lifecycle order mismatch: " + bindings.calls);
@@ -146,6 +155,14 @@ public final class ExperimentalGlesLibretroHostLifecycleTest {
         try { host.resume(); }
         catch (IllegalStateException expected) { rejectedAfterClose = true; }
         check(rejectedAfterClose, "closed qualification host remained usable");
+        boolean resetRejectedAfterClose = false;
+        try { host.reset(); }
+        catch (IllegalStateException expected) { resetRejectedAfterClose = true; }
+        check(resetRejectedAfterClose, "closed host accepted a reset");
+        boolean portRejectedAfterClose = false;
+        try { host.setControllerPortDevice(0, 1); }
+        catch (IllegalStateException expected) { portRejectedAfterClose = true; }
+        check(portRejectedAfterClose, "closed host accepted a port device");
         deleteTree(root);
         System.out.println("ExperimentalGlesLibretroHost lifecycle probe passed");
     }

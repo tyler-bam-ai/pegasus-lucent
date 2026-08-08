@@ -42,6 +42,16 @@ public interface EngineSession {
     /** Returns true when the engine displayed a Lucent-owned checkpoint timeline. */
     boolean openRestoreHistory();
 
+    /**
+     * Restarts the running game from power-on, as the held Select+Start combo
+     * requests.
+     *
+     * Fails closed: an adapter that cannot prove it reached a real reset must
+     * return false so the host reports nothing happened rather than leaving the
+     * player unsure whether their progress was discarded.
+     */
+    default boolean reset() { return false; }
+
     /** Receives gameplay keys after Lucent's pause/Stop-button handling. */
     boolean dispatchKeyEvent(KeyEvent event);
 

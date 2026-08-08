@@ -26,6 +26,10 @@ static const char *puae_kickstart;
 static bool prepare_exit_result = true;
 static unsigned prepare_exit_count;
 static unsigned unload_count;
+static unsigned reset_count;
+static unsigned port_device_count;
+static unsigned last_port;
+static unsigned last_device;
 
 /* Test-only probes resolved by the host harness through dlopen/dlsym. */
 void lucent_mock_emit_video(unsigned width, unsigned height, size_t pitch) {
@@ -53,6 +57,10 @@ void lucent_mock_set_sample_rate(double value) { reported_sample_rate = value; }
 void lucent_mock_set_prepare_exit_result(bool value) { prepare_exit_result = value; }
 unsigned lucent_mock_prepare_exit_count(void) { return prepare_exit_count; }
 unsigned lucent_mock_unload_count(void) { return unload_count; }
+unsigned lucent_mock_reset_count(void) { return reset_count; }
+unsigned lucent_mock_port_device_count(void) { return port_device_count; }
+unsigned lucent_mock_last_port(void) { return last_port; }
+unsigned lucent_mock_last_device(void) { return last_device; }
 int16_t lucent_mock_pointer_state(unsigned id) {
     return input_state ? input_state(0, RETRO_DEVICE_POINTER, 0, id) : 0;
 }
@@ -118,9 +126,14 @@ void retro_set_input_state(retro_input_state_t callback) {
     input_state = callback;
 }
 void retro_set_controller_port_device(unsigned port, unsigned device) {
-    (void)port; (void)device;
+    port_device_count++;
+    last_port = port;
+    last_device = device;
 }
-void retro_reset(void) { counter = 0; }
+void retro_reset(void) {
+    reset_count++;
+    counter = 0;
+}
 void retro_run(void) {
     uint16_t pixel;
     int16_t samples[2];

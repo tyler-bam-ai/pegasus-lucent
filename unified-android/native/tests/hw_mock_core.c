@@ -38,6 +38,10 @@ static uint32_t counter;
 static uint8_t save_ram[8];
 static unsigned reset_count;
 static unsigned destroy_count;
+static unsigned game_reset_count;
+static unsigned port_device_count;
+static unsigned last_port;
+static unsigned last_device;
 static bool preferred_ok;
 static bool interface_ok;
 static bool shared_ok;
@@ -67,6 +71,10 @@ static void context_destroy(void) { destroy_count++; }
 
 unsigned lucent_hw_mock_reset_count(void) { return reset_count; }
 unsigned lucent_hw_mock_destroy_count(void) { return destroy_count; }
+unsigned lucent_hw_mock_game_reset_count(void) { return game_reset_count; }
+unsigned lucent_hw_mock_port_device_count(void) { return port_device_count; }
+unsigned lucent_hw_mock_last_port(void) { return last_port; }
+unsigned lucent_hw_mock_last_device(void) { return last_device; }
 bool lucent_hw_mock_preferred_ok(void) { return preferred_ok; }
 bool lucent_hw_mock_interface_ok(void) { return interface_ok; }
 bool lucent_hw_mock_shared_ok(void) { return shared_ok; }
@@ -160,10 +168,14 @@ void retro_set_audio_sample_batch(retro_audio_sample_batch_t callback) {
 void retro_set_input_poll(retro_input_poll_t callback) { input_poll = callback; }
 void retro_set_input_state(retro_input_state_t callback) { input_state = callback; }
 void retro_set_controller_port_device(unsigned port, unsigned device) {
-    (void)port;
-    (void)device;
+    port_device_count++;
+    last_port = port;
+    last_device = device;
 }
-void retro_reset(void) { counter = 0; }
+void retro_reset(void) {
+    game_reset_count++;
+    counter = 0;
+}
 void retro_run(void) {
     int16_t samples[2] = {0, 0};
     counter++;

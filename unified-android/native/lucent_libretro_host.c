@@ -1145,6 +1145,27 @@ bool lucent_retro_set_controller_port_device(lucent_retro_host *host,
     RETURN_UNLOCKED(true);
 }
 
+bool lucent_retro_reset(lucent_retro_host *host, char *error,
+                        size_t error_size) {
+    lock_host();
+    if (!host || !host->game_loaded || !host->reset) {
+        set_error(error, error_size, "a loaded core session is required");
+        RETURN_UNLOCKED(false);
+    }
+    /*
+     * retro_reset re-enters the frontend the way retro_run does: cores are
+     * free to emit a boot frame or flush audio from inside it, so the
+     * callback owner must be this host before the call.
+     */
+    active_host = host;
+    host->reset();
+#if defined(__ANDROID__)
+    __android_log_print(ANDROID_LOG_INFO, "LucentNativeHost",
+            "retro_reset complete");
+#endif
+    RETURN_UNLOCKED(true);
+}
+
 bool lucent_retro_unload_game(lucent_retro_host *host,
                               char *error, size_t error_size) {
     lock_host();

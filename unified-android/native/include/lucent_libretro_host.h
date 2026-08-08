@@ -101,6 +101,13 @@ bool lucent_retro_load_game(lucent_retro_host *host, const char *game_path,
 bool lucent_retro_set_controller_port_device(lucent_retro_host *host,
                                              unsigned port, unsigned device,
                                              char *error, size_t error_size);
+/**
+ * Power-cycles the loaded content in place (libretro retro_reset). Battery
+ * save RAM stays in core memory across the call, exactly as a console reset
+ * button leaves a cartridge untouched. Fails closed with no loaded game.
+ */
+bool lucent_retro_reset(lucent_retro_host *host, char *error,
+                        size_t error_size);
 bool lucent_retro_unload_game(lucent_retro_host *host,
                               char *error, size_t error_size);
 bool lucent_retro_game_loaded(const lucent_retro_host *host);

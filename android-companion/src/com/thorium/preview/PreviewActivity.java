@@ -10,6 +10,8 @@ import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.SurfaceTexture;
 import android.graphics.drawable.GradientDrawable;
+import android.media.AudioAttributes;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Bundle;
@@ -106,6 +108,11 @@ public final class PreviewActivity extends Activity {
         }
         running = true;
         ownsVisibilityFlags = true;
+        // Preview audio is STREAM_MUSIC (MediaPlayer's USAGE_MEDIA attributes
+        // below), the same stream the engines play on. Bind the hardware volume
+        // keys to it here as well as in LucentApplication so this Activity can
+        // never present a window whose keys drive an unrelated stream.
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
         soundEnabled = getSharedPreferences("preview", MODE_PRIVATE)
                 .getBoolean(PreviewService.EXTRA_SOUND_ENABLED, false);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
@@ -718,6 +725,14 @@ public final class PreviewActivity extends Activity {
                 Log.i("ThorPreview", "Preparing video path=" + path
                         + " exists=" + file.isFile() + " bytes=" + file.length());
                 player = new MediaPlayer();
+                // State the stream instead of inheriting it. USAGE_MEDIA maps
+                // to STREAM_MUSIC, which is what the engines' AudioTracks and
+                // Lucent's menu sounds use, so one hardware volume control
+                // governs every sound the app makes.
+                player.setAudioAttributes(new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+                        .build());
                 player.setSurface(new Surface(view.getSurfaceTexture()));
                 player.setLooping(looping);
                 // Warm neighbors begin silently. Only the slot that has

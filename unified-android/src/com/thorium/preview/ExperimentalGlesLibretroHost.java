@@ -19,6 +19,8 @@ public final class ExperimentalGlesLibretroHost implements Closeable {
         long create(String core, String root, String system, String save,
                     int presentationPolicy);
         void loadGame(long handle, String game);
+        void setControllerPortDevice(long handle, int port, int device);
+        void reset(long handle);
         void attach(long handle, Surface surface);
         void recreate(long handle, Surface surface);
         boolean runAndPresent(long handle);
@@ -47,6 +49,10 @@ public final class ExperimentalGlesLibretroHost implements Closeable {
         @Override public void loadGame(long handle, String game) {
             nativeLoadGameGles(handle, game);
         }
+        @Override public void setControllerPortDevice(long handle, int port, int device) {
+            nativeSetControllerPortDeviceGles(handle, port, device);
+        }
+        @Override public void reset(long handle) { nativeResetGles(handle); }
         @Override public void attach(long handle, Surface surface) {
             nativeAttachSurfaceGles(handle, surface);
         }
@@ -185,6 +191,29 @@ public final class ExperimentalGlesLibretroHost implements Closeable {
         bindings.loadGame(handle, game.getCanonicalPath());
     }
 
+    /**
+     * Selects the controller a core emulates on a port. Loading a game resets
+     * port 0 to a plain RetroPad, so a system whose device is something else
+     * must set it afterwards -- Dolphin only attaches the Wii Nunchuk for
+     * RETRO_DEVICE_WIIMOTE_NC, and titles that require the extension (Super
+     * Mario Galaxy 2) accept no input without it. Wii and GameCube run on this
+     * hardware path, so the call has to exist here as well as on the software
+     * host.
+     */
+    public synchronized void setControllerPortDevice(int port, int device) {
+        checkOpen();
+        bindings.setControllerPortDevice(handle, port, device);
+    }
+
+    /**
+     * Power-cycles the loaded content in place (libretro {@code retro_reset}).
+     * Must run on the render-owning thread like every other call here.
+     */
+    public synchronized void reset() {
+        checkOpen();
+        bindings.reset(handle);
+    }
+
     public synchronized void attachSurface(Surface surface) {
         checkOpen();
         if (surface == null || !surface.isValid())
@@ -296,6 +325,9 @@ public final class ExperimentalGlesLibretroHost implements Closeable {
                                                  String systemDirectory, String saveDirectory,
                                                  int presentationPolicy);
     private static native void nativeLoadGameGles(long handle, String gamePath);
+    private static native void nativeSetControllerPortDeviceGles(long handle, int port,
+                                                                 int device);
+    private static native void nativeResetGles(long handle);
     private static native void nativeAttachSurfaceGles(long handle, Surface surface);
     private static native void nativeRecreateSurfaceGles(long handle, Surface surface);
     private static native boolean nativeRunAndPresentGles(long handle);

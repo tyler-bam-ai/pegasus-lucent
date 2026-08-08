@@ -92,6 +92,10 @@ int main(int argc, char **argv) {
     fn_set_boolean set_prepare_exit_result;
     fn_count prepare_exit_count;
     fn_count unload_count;
+    fn_count reset_count;
+    fn_count port_device_count;
+    fn_count last_port;
+    fn_count last_device;
     fn_pointer_state pointer_state;
     if (argc != 6) {
         fprintf(stderr, "usage: host_test CORE TRUSTED_ROOT SYSTEM_DIR SAVE_DIR GAME\n");
@@ -122,6 +126,11 @@ int main(int argc, char **argv) {
     prepare_exit_count = (fn_count)dlsym(
             mock_library, "lucent_mock_prepare_exit_count");
     unload_count = (fn_count)dlsym(mock_library, "lucent_mock_unload_count");
+    reset_count = (fn_count)dlsym(mock_library, "lucent_mock_reset_count");
+    port_device_count = (fn_count)dlsym(
+            mock_library, "lucent_mock_port_device_count");
+    last_port = (fn_count)dlsym(mock_library, "lucent_mock_last_port");
+    last_device = (fn_count)dlsym(mock_library, "lucent_mock_last_device");
     pointer_state = (fn_pointer_state)dlsym(
             mock_library, "lucent_mock_pointer_state");
     CHECK(emit_video && emit_audio && probe_null_environment &&
@@ -129,8 +138,13 @@ int main(int argc, char **argv) {
             set_oversized_state && set_changing_state_size &&
             set_oversized_save_ram && set_sample_rate && option_value &&
             set_prepare_exit_result && prepare_exit_count && unload_count &&
+            reset_count && port_device_count && last_port && last_device &&
             pointer_state,
             "mock safety probes are missing");
+    CHECK(!lucent_retro_reset(host, error, sizeof(error)),
+          "reset was accepted before a game was loaded");
+    CHECK(!lucent_retro_set_controller_port_device(host, 0, 1, error, sizeof(error)),
+          "controller port device was accepted before a game was loaded");
     CHECK(option_value("lucent_software_test") &&
             strcmp(option_value("lucent_software_test"), "preferred") == 0,
             "software core option defaults were not retained");
@@ -301,6 +315,42 @@ int main(int argc, char **argv) {
     set_oversized_save_ram(true);
     CHECK(lucent_retro_save_ram_size(host) == 0, "oversized save RAM was exposed");
     set_oversized_save_ram(false);
+    {
+        /* Loading already selected a plain RetroPad on port 0. */
+        unsigned selections = port_device_count();
+        CHECK(selections >= 1 && last_port() == 0 &&
+              last_device() == RETRO_DEVICE_JOYPAD,
+              "load did not reset port 0 to a plain RetroPad");
+        CHECK(lucent_retro_set_controller_port_device(host, 0, 0x301u,
+                  error, sizeof(error)),
+              "Wii Nunchuk port device was rejected");
+        CHECK(port_device_count() == selections + 1 && last_port() == 0 &&
+              last_device() == 0x301u,
+              "port device did not reach the core unchanged");
+        CHECK(!lucent_retro_set_controller_port_device(host, 8, 0x301u,
+                  error, sizeof(error)),
+              "out-of-range controller port was accepted");
+        CHECK(port_device_count() == selections + 1,
+              "rejected controller port still reached the core");
+    }
+    {
+        unsigned resets = reset_count();
+        uint8_t after_reset[8] = {0};
+        CHECK(lucent_retro_run_frame(host, error, sizeof(error)),
+              "pre-reset frame failed");
+        CHECK(state_value(host, error, sizeof(error)) != 0,
+              "mock core had nothing to power-cycle");
+        CHECK(lucent_retro_reset(host, error, sizeof(error)), "reset failed");
+        CHECK(reset_count() == resets + 1, "retro_reset was not invoked");
+        CHECK(state_value(host, error, sizeof(error)) == 0,
+              "reset did not power-cycle core state");
+        /* A soft reset is the console's reset button: battery-backed save RAM
+         * must survive it, which is why the Java session no longer restores a
+         * disk copy over it. */
+        CHECK(lucent_retro_read_save_ram(host, after_reset, sizeof(after_reset)) &&
+              memcmp(save_ram, after_reset, sizeof(save_ram)) == 0,
+              "reset erased battery-backed save RAM");
+    }
     set_prepare_exit_result(false);
     CHECK(!lucent_retro_unload_game(host, error, sizeof(error)),
           "failed exit autosave did not reject unload");
@@ -315,6 +365,17 @@ int main(int argc, char **argv) {
           "successful exit autosave ordering mismatch");
     CHECK(!lucent_retro_run_frame(host, error, sizeof(error)),
           "unloaded game remained runnable");
+    {
+        unsigned resets = reset_count();
+        CHECK(!lucent_retro_reset(host, error, sizeof(error)),
+              "unloaded game accepted a reset");
+        CHECK(reset_count() == resets, "rejected reset still reached the core");
+        CHECK(!lucent_retro_set_controller_port_device(host, 0, 0x301u,
+                  error, sizeof(error)),
+              "unloaded game accepted a controller port device");
+    }
+    CHECK(!lucent_retro_reset(NULL, error, sizeof(error)),
+          "null host accepted a reset");
     lucent_retro_destroy(host);
     set_sample_rate(2097152.0);
     host = lucent_retro_create(argv[1], argv[2], argv[3], argv[4], error, sizeof(error));

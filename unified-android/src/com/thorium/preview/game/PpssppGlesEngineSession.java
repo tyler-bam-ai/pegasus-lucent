@@ -417,22 +417,40 @@ final class PpssppGlesEngineSession implements EngineSession,
     }
 
     /**
-     * Fails closed until the hardware host exposes a reset.
+     * Power-cycles the loaded content through libretro's retro_reset.
      *
-     * The GLES/Vulkan boundary (ExperimentalGlesRenderLoop.Host) offers no
-     * unload/load pair, so unlike the software session there is no reload to
-     * fall back on, and the one remaining primitive is unusable here: probing
-     * serialize() to capture a power-on snapshot pauses PPSSPP's emulation
-     * thread by design and only restarts on an unserialize, which is exactly
-     * why restoreQuickResume is a guarded one-shot. Nothing is faked; the host
-     * logs that the combo produced no reset. Exposing retro_reset through the
-     * native host is the single change that makes this real.
+     * There is still no unload/load pair on this boundary, so there is no
+     * reload to fall back on: either the native reset lands or the caller is
+     * told nothing happened. The render loop marshals the call onto the
+     * render-owning thread and waits for it, which is what lets this return an
+     * honest result — every other core entry point (attach, run/present,
+     * detach, close) belongs to that one thread, and retro_reset is no
+     * different.
+     *
+     * Battery save RAM is left alone. retro_reset is the console's reset
+     * button and does not disturb the core's SRAM; writing the last persisted
+     * copy back over it would roll play backwards.
      */
     @Override public boolean reset() {
-        Log.w(TAG, "Reset unavailable on the hardware session engine=" + entry.id +
-                " system=" + (request == null ? "" : request.systemId) +
-                " marker=reset-unavailable");
-        return false;
+        ExperimentalGlesRenderLoop active = renderLoop;
+        String systemId = request == null ? "" : request.systemId;
+        if (!prepared || active == null || stopping.get() || released.get()) {
+            Log.w(TAG, "Reset unavailable on the hardware session engine=" +
+                    entry.id + " system=" + systemId +
+                    " marker=reset-unavailable");
+            return false;
+        }
+        try {
+            active.reset();
+        } catch (Throwable failure) {
+            Log.w(TAG, "Reset rejected engine=" + entry.id +
+                    " system=" + systemId + " marker=reset-failure", failure);
+            return false;
+        }
+        flushAudioAfterRestore();
+        Log.i(TAG, "Reset applied engine=" + entry.id +
+                " system=" + systemId + " marker=reset");
+        return true;
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
@@ -635,6 +653,19 @@ final class PpssppGlesEngineSession implements EngineSession,
         }
         prepared = true;
         try {
+            // The render loop's factory has just loaded the game, and loading
+            // puts port 0 back to a plain RetroPad. Wii and GameCube run on
+            // this hardware path, so a system whose controller is something
+            // else must say so before the first frame: Dolphin only attaches
+            // the Wii Nunchuk for RETRO_DEVICE_WIIMOTE_NC, and titles that
+            // require it (Super Mario Galaxy 2) accept no input without it.
+            int portDevice = LibretroJoypadLayout.portDeviceFor(request.systemId);
+            if (portDevice != LibretroJoypadLayout.RETRO_DEVICE_JOYPAD) {
+                active.setControllerPortDevice(0, portDevice);
+                Log.i(TAG, "Controller port device engine=" + entry.id +
+                        " system=" + request.systemId +
+                        " device=0x" + Integer.toHexString(portDevice));
+            }
             restoreSaveRam(active);
             double sampleRate = active.avInfo().sampleRate;
             audioTrack = createAudioTrack(sampleRate);

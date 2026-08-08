@@ -121,7 +121,8 @@ public final class PreviewService extends Service {
     // stay callable without a token.
     private static final Set<String> MUTATING_ENDPOINTS = new HashSet<>(Arrays.asList(
             "/play", "/heartbeat", "/hide", "/transition", "/blank", "/led",
-            "/settings/sound", "/game/rename", "/game/delete", "/import/scan",
+            "/settings/sound", "/settings/sfx", "/sfx", "/game/rename",
+            "/game/delete", "/import/scan",
             "/import/initial", "/import/reload", "/maintenance/rescan",
             "/browser/open", "/update/check", "/update/install",
             "/archive/include", "/launch/status"));
@@ -132,7 +133,8 @@ public final class PreviewService extends Service {
     // still blocked by the Origin/Referer rejection on every mutating path).
     private static final Set<String> THEME_CALLED_ENDPOINTS = new HashSet<>(Arrays.asList(
             "/play", "/heartbeat", "/hide", "/transition", "/blank", "/led",
-            "/settings/sound", "/game/rename", "/game/delete", "/import/scan",
+            "/settings/sound", "/settings/sfx", "/sfx", "/game/rename",
+            "/game/delete", "/import/scan",
             "/import/reload", "/maintenance/rescan", "/browser/open",
             "/update/check", "/update/install", "/launch/status"));
     private volatile String controlToken = "";
@@ -153,6 +155,10 @@ public final class PreviewService extends Service {
         updateManager = new UpdateManager(this);
         libraryIndexManager = new LibraryIndexManager();
         thorLedManager = new ThorLedManager(this);
+        // Decode the four menu blips now. SoundPool loads asynchronously, and
+        // doing it at process start means the user's very first D-pad press in
+        // the library is already audible.
+        MenuSoundPlayer.warmUp(this);
         Thread launchMigration = new Thread(() -> {
             int changed = LaunchMetadataRouter.normalize(this);
             if (changed > 0) {
@@ -467,7 +473,9 @@ public final class PreviewService extends Service {
                 respond(writer, "200 OK", "{\"dualScreen\":" + dualScreen
                         + ",\"previewPlacement\":\""
                         + (dualScreen ? "secondary-display" : "upper-right-pip")
-                        + "\",\"soundEnabled\":" + soundEnabled + "}");
+                        + "\",\"soundEnabled\":" + soundEnabled
+                        + ",\"soundEffects\":" + MenuSoundPlayer.isEnabled(this)
+                        + "}");
             } else if ("/audit/artwork".equals(path)) {
                 try {
                     respond(writer, "200 OK", ArtworkAudit.run(new java.io.File(
@@ -491,6 +499,31 @@ public final class PreviewService extends Service {
                         .putExtra(EXTRA_SOUND_ENABLED, enabled));
                 respond(writer, "200 OK", "{\"ok\":true,\"soundEnabled\":"
                         + enabled + "}");
+            } else if ("/settings/sfx".equals(path)) {
+                // Sound Effects defaults on, so an absent parameter means on;
+                // only an explicit 0/false turns the menu blips off.
+                Map<String, String> values = parseQuery(query);
+                String requested = values.getOrDefault("enabled", "1");
+                boolean enabled = !"0".equals(requested)
+                        && !"false".equalsIgnoreCase(requested);
+                MenuSoundPlayer.setEnabled(this, enabled);
+                respond(writer, "200 OK", "{\"ok\":true,\"soundEffects\":"
+                        + enabled + "}");
+            } else if ("/sfx".equals(path)) {
+                // Lets the theme sound an interaction that is not a plain key
+                // press — most importantly the denial blip, which no key of its
+                // own can produce. Playing is a no-op while the setting is off.
+                MenuSoundPlayer.Cue cue = MenuSoundPlayer.cueByName(
+                        parseQuery(query).get("name"));
+                if (cue == null) {
+                    respond(writer, "400 Bad Request",
+                            "{\"error\":\"unknown sound effect\"}");
+                    return;
+                }
+                MenuSoundPlayer.play(this, cue);
+                respond(writer, "200 OK", "{\"ok\":true,\"played\":\""
+                        + cue.name().toLowerCase(Locale.US) + "\",\"enabled\":"
+                        + MenuSoundPlayer.isEnabled(this) + "}");
             } else if ("/led".equals(path)) {
                 Map<String, String> values = parseQuery(query);
                 boolean enabled = !"0".equals(values.getOrDefault("enabled", "1"));

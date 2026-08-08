@@ -33,6 +33,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.thorium.lucent.metadata.EngineSystemIdResolver;
+import com.thorium.preview.MenuSoundPlayer;
 import com.thorium.preview.PreviewService;
 
 /**
@@ -49,6 +50,10 @@ public final class InWindowGameHost
     private static final String TAG = "LucentInWindow";
     private static final String AUTHORITY = "com.thorium.preview.roms";
     private static final long STOP_HOLD_MS = 1000L;
+    // Select+Start held together resets the running game. Three seconds is far
+    // enough past the 1 s Stop hold and past any Start press a game asks for
+    // that it cannot be reached by accident.
+    private static final long RESET_COMBO_HOLD_MS = 3000L;
     // About three 60 fps frame periods: long enough that every core's next
     // input poll observes the synthesized Select press, short enough to feel
     // like a tap.
@@ -100,11 +105,21 @@ public final class InWindowGameHost
     private boolean menuVisible;
     private boolean stopPressed;
     private boolean stopHoldTriggered;
+    private boolean startPressed;
+    // Start reaches the game immediately when it is pressed on its own, so the
+    // combo has to be able to take that press back. Both facts are needed:
+    // whether the game currently sees Start down, and the event that put it
+    // there (a synthetic release must carry the same device to be routed).
+    private boolean startDeliveredToGame;
+    private KeyEvent startDownEvent;
+    private boolean comboConsumedSelect;
+    private boolean comboConsumedStart;
     private boolean fatalErrorVisible;
     private volatile boolean libraryReturned;
     private volatile EngineSession retiringSession;
     private int pauseSelection;
     private long stopGeneration;
+    private long resetGeneration;
 
     private InWindowGameHost(Activity activity, GameLaunchRequest request,
             ViewGroup content) {
@@ -147,7 +162,16 @@ public final class InWindowGameHost
     }
 
     public static synchronized boolean dispatchKeyEvent(Activity activity, KeyEvent event) {
-        return active != null && active.activity == activity && active.handleKeyEvent(event);
+        if (active != null)
+            return active.activity == activity && active.handleKeyEvent(event);
+        // No session exists at all, so the press belongs to the library UI.
+        // This is the one place every hardware key in the app passes through
+        // (MainActivity.dispatchKeyEvent is patched to call it first), which
+        // makes it the only hook that can sound menu navigation with no chance
+        // of sounding over a running game. The event is not consumed: Qt still
+        // receives it and performs the navigation.
+        MenuSoundPlayer.playForKey(activity, event);
+        return false;
     }
 
     public static synchronized boolean dispatchGenericMotionEvent(
@@ -252,7 +276,15 @@ public final class InWindowGameHost
                 (qualificationOnly || engine.equals(
                         Phase2QualificationCatalog.libraryEngineIdForSystem(
                                 activity, system)));
-        if (!approvedPhaseOne && !approvedPhaseTwo) {
+        // Phase 3 in-process native adapters are gated by their own catalog,
+        // which applies the same fail-closed rule: the adapter must be bundled
+        // in this APK and hash-match its signed manifest before it resolves.
+        NativeAdapterCatalog.Entry phaseThree =
+                NativeAdapterCatalog.byId(activity, engine);
+        boolean approvedPhaseThree = phaseThree != null && phaseThree.supports(system) &&
+                engine.equals(NativeAdapterCatalog.libraryEngineIdForSystem(
+                        activity, system));
+        if (!approvedPhaseOne && !approvedPhaseTwo && !approvedPhaseThree) {
             Log.e(TAG, "Rejected stale/unpackaged engine route engine=" + engine +
                     " system=" + system);
             return null;
@@ -516,6 +548,9 @@ public final class InWindowGameHost
             }
             return true;
         }
+        // Only reached during live gameplay: while the pause menu is up Start
+        // keeps its existing swallowed-by-the-menu behaviour above.
+        if (code == KeyEvent.KEYCODE_BUTTON_START) return handleStartButton(event);
         return session != null && session.dispatchKeyEvent(event);
     }
 
@@ -529,6 +564,16 @@ public final class InWindowGameHost
             if (event.getRepeatCount() != 0) return true;
             stopPressed = true;
             stopHoldTriggered = false;
+            if (startPressed) {
+                // Start is already held, so this is the reset combo rather than
+                // a Stop hold. Retiring the exit generation is what stops the
+                // 1 s hold from exiting to the library one third of the way
+                // through the 3 s combo.
+                ++stopGeneration;
+                releaseLeakedStartPress();
+                armResetCombo();
+                return true;
+            }
             final long generation = ++stopGeneration;
             mainHandler.postDelayed(() -> {
                 if (stopPressed && generation == stopGeneration) {
@@ -542,31 +587,154 @@ public final class InWindowGameHost
         if (event.getAction() == KeyEvent.ACTION_UP) {
             stopPressed = false;
             ++stopGeneration;
-            if (!stopHoldTriggered && session != null) {
-                // Cores observe buttons by polling once per retro_run; a
-                // zero-width down/up pair between two polls is invisible.
-                // Latch the synthesized Select press across a few frame
-                // periods so at least one poll sees it.
-                final EngineSession target = session;
-                final KeyEvent up = event;
-                long now = event.getEventTime();
-                target.dispatchKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN,
-                        event.getKeyCode(), 0, event.getMetaState(), event.getDeviceId(),
-                        event.getScanCode(), event.getFlags(), event.getSource()));
-                mainHandler.postDelayed(() -> {
-                    // If the session changed meanwhile, drop the release: the
-                    // old session is retiring and a new host starts with a
-                    // clean joypad mask.
-                    if (session == target) target.dispatchKeyEvent(up);
-                }, TAP_SELECT_HOLD_MS);
+            // Releasing either half retires any combo still counting down.
+            ++resetGeneration;
+            if (comboConsumedSelect) {
+                // The reset already spent this press. Replaying it as a tap
+                // would land Select on the game that just restarted.
+                comboConsumedSelect = false;
+                stopHoldTriggered = false;
+                return true;
             }
+            if (!stopHoldTriggered) latchTapToSession(event);
             stopHoldTriggered = false;
         }
         return true;
     }
 
+    /**
+     * Start behaves exactly as it always has until Select joins it.
+     *
+     * A press that begins while Select is already held is withheld from the
+     * game, because it is a candidate for the reset combo; if the combo never
+     * completes, the release replays it as a tap so the game still sees the
+     * button. A press that begins on its own goes straight through and keeps
+     * its hold semantics, and arming the combo afterwards takes it back with a
+     * synthetic release so no Start bit is left stuck across a reset.
+     */
+    private boolean handleStartButton(KeyEvent event) {
+        if (event.getAction() == KeyEvent.ACTION_DOWN) {
+            if (event.getRepeatCount() != 0)
+                return !startDeliveredToGame || deliverToSession(event);
+            startPressed = true;
+            startDownEvent = event;
+            if (stopPressed) {
+                // Select is held: withhold Start and replace the pending Stop
+                // hold with the reset countdown.
+                ++stopGeneration;
+                startDeliveredToGame = false;
+                armResetCombo();
+                return true;
+            }
+            startDeliveredToGame = true;
+            return deliverToSession(event);
+        }
+        if (event.getAction() == KeyEvent.ACTION_UP) {
+            startPressed = false;
+            ++resetGeneration;
+            if (comboConsumedStart) {
+                comboConsumedStart = false;
+                startDeliveredToGame = false;
+                startDownEvent = null;
+                return true;
+            }
+            startDownEvent = null;
+            if (startDeliveredToGame) {
+                startDeliveredToGame = false;
+                return deliverToSession(event);
+            }
+            // Held next to Select but released before the combo completed: the
+            // game never saw the press, so deliver it now as a normal tap.
+            latchTapToSession(event);
+        }
+        return true;
+    }
+
+    private boolean deliverToSession(KeyEvent event) {
+        return session != null && session.dispatchKeyEvent(event);
+    }
+
+    /**
+     * Replays a withheld press as a tap the core can actually observe.
+     *
+     * Cores read buttons by polling once per retro_run, so a zero-width
+     * down/up pair between two polls is invisible. Latch the synthesized press
+     * across a few frame periods instead, so at least one poll sees it.
+     */
+    private void latchTapToSession(KeyEvent release) {
+        final EngineSession target = session;
+        if (target == null) return;
+        final KeyEvent up = release;
+        long now = release.getEventTime();
+        target.dispatchKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN,
+                release.getKeyCode(), 0, release.getMetaState(), release.getDeviceId(),
+                release.getScanCode(), release.getFlags(), release.getSource()));
+        mainHandler.postDelayed(() -> {
+            // If the session changed meanwhile, drop the release: the old
+            // session is retiring and a new host starts with a clean joypad
+            // mask.
+            if (session == target) target.dispatchKeyEvent(up);
+        }, TAP_SELECT_HOLD_MS);
+    }
+
+    /**
+     * Takes back a Start press the game already received. Without this, arming
+     * the combo after Start went down alone would leave the joypad's Start bit
+     * asserted for three seconds and across the reset itself.
+     */
+    private void releaseLeakedStartPress() {
+        if (!startDeliveredToGame) return;
+        startDeliveredToGame = false;
+        EngineSession target = session;
+        KeyEvent down = startDownEvent;
+        if (target == null || down == null) return;
+        long now = down.getEventTime();
+        target.dispatchKeyEvent(new KeyEvent(down.getDownTime(), now, KeyEvent.ACTION_UP,
+                down.getKeyCode(), 0, down.getMetaState(), down.getDeviceId(),
+                down.getScanCode(), down.getFlags(), down.getSource()));
+    }
+
+    /**
+     * Starts (or restarts) the 3 s countdown. Modelled on the Stop hold: the
+     * generation counter is bumped by every release and by every re-arm, so a
+     * stale callback can never fire after the buttons were let go.
+     */
+    private void armResetCombo() {
+        final long generation = ++resetGeneration;
+        mainHandler.postDelayed(() -> {
+            if (generation != resetGeneration || !stopPressed || !startPressed ||
+                    menuVisible || fatalErrorVisible || exitStarted.get()) return;
+            fireResetCombo();
+        }, RESET_COMBO_HOLD_MS);
+    }
+
+    private void fireResetCombo() {
+        // Both presses belong to the combo now; neither may reach the game.
+        comboConsumedSelect = true;
+        comboConsumedStart = true;
+        stopHoldTriggered = false;
+        releaseLeakedStartPress();
+        EngineSession target = session;
+        boolean applied = target != null && target.reset();
+        Log.i(TAG, "Reset combo fired engine=" + request.engineId +
+                " system=" + request.systemId + " applied=" + applied +
+                " marker=reset-combo");
+    }
+
+    private void cancelResetCombo() {
+        ++resetGeneration;
+        releaseLeakedStartPress();
+        startPressed = false;
+        startDownEvent = null;
+        comboConsumedSelect = false;
+        comboConsumedStart = false;
+    }
+
     private void showPauseMenu() {
         if (pauseOverlay == null || menuVisible || exitStarted.get()) return;
+        // The menu owns the buttons from here, and their releases are consumed
+        // by the menu handler above rather than reaching the combo.
+        cancelResetCombo();
         menuVisible = true;
         if (prepared && session != null)
             session.pause(EngineSession.PauseReason.LUCENT_MENU);

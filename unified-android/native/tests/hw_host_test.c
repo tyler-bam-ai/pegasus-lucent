@@ -52,18 +52,30 @@ static int exercise_core(const char *core_path, const char *trusted_root,
     fn_boolean interface_ok;
     fn_boolean shared_ok;
     fn_boolean backend_hooks_ok;
+    fn_count game_reset_count;
+    fn_count port_device_count;
+    fn_count last_port;
+    fn_count last_device;
     unsigned reset_before;
     unsigned destroy_before;
     CHECK(library, "could not open hardware mock core");
     reset_count = (fn_count)symbol(library, "lucent_hw_mock_reset_count");
     destroy_count = (fn_count)symbol(library, "lucent_hw_mock_destroy_count");
+    game_reset_count = (fn_count)symbol(library,
+                                        "lucent_hw_mock_game_reset_count");
+    port_device_count = (fn_count)symbol(library,
+                                         "lucent_hw_mock_port_device_count");
+    last_port = (fn_count)symbol(library, "lucent_hw_mock_last_port");
+    last_device = (fn_count)symbol(library, "lucent_hw_mock_last_device");
     preferred_ok = (fn_boolean)symbol(library, "lucent_hw_mock_preferred_ok");
     interface_ok = (fn_boolean)symbol(library, "lucent_hw_mock_interface_ok");
     shared_ok = (fn_boolean)symbol(library, "lucent_hw_mock_shared_ok");
     backend_hooks_ok = (fn_boolean)symbol(library,
                                            "lucent_hw_mock_backend_hooks_ok");
     CHECK(reset_count && destroy_count && preferred_ok && interface_ok &&
-          shared_ok && backend_hooks_ok, "hardware mock probes are missing");
+          shared_ok && backend_hooks_ok && game_reset_count &&
+          port_device_count && last_port && last_device,
+          "hardware mock probes are missing");
     reset_before = reset_count();
     destroy_before = destroy_count();
 
@@ -128,6 +140,30 @@ static int exercise_core(const char *core_path, const char *trusted_root,
     CHECK(lucent_retro_get_hw_info(host, &info) && info.context_ready &&
           info.frame_sequence == 1,
           "hardware framebuffer sentinel was not recorded");
+    {
+        /* Wii and GameCube run on this hardware path, so the Nunchuk port
+         * device and the power cycle must both work here, not only on the
+         * software host. */
+        unsigned selections = port_device_count();
+        unsigned game_resets = game_reset_count();
+        CHECK(selections >= 1 && last_port() == 0 &&
+              last_device() == RETRO_DEVICE_JOYPAD,
+              "hardware load did not reset port 0 to a plain RetroPad");
+        CHECK(lucent_retro_set_controller_port_device(host, 0, 0x301u,
+                  error, sizeof(error)),
+              "hardware host rejected the Wii Nunchuk port device");
+        CHECK(port_device_count() == selections + 1 && last_port() == 0 &&
+              last_device() == 0x301u,
+              "hardware port device did not reach the core unchanged");
+        CHECK(lucent_retro_reset(host, error, sizeof(error)),
+              "hardware host rejected a reset");
+        CHECK(game_reset_count() == game_resets + 1,
+              "retro_reset was not invoked on the hardware host");
+        CHECK(reset_count() == reset_before + 1,
+              "game reset disturbed the hardware context lifecycle");
+        CHECK(lucent_retro_run_frame(host, error, sizeof(error)),
+              "hardware frame failed after a game reset");
+    }
     CHECK(lucent_retro_hw_context_lost(host, error, sizeof(error)),
           "unexpected context-loss transition failed");
     CHECK(lucent_retro_get_hw_info(host, &info) && !info.context_ready,
