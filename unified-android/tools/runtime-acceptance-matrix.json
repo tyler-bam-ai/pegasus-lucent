@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "systems": [
+    {"folder": "nes", "aliases": ["nes"], "engines": ["mesen"], "phase": 1},
+    {"folder": "megadrive", "aliases": ["megadrive", "genesis"], "engines": ["blastem"], "phase": 1},
+    {"folder": "gb", "aliases": ["gb"], "engines": ["sameboy"], "phase": 1},
+    {"folder": "gamegear", "aliases": ["gamegear"], "engines": ["gearsystem"], "phase": 1},
+    {"folder": "snes", "aliases": ["snes"], "engines": ["mesen-s"], "phase": 1},
+    {"folder": "psx", "aliases": ["psx", "ps1"], "engines": ["swanstation"], "phase": 1},
+    {"folder": "n64", "aliases": ["n64"], "engines": ["mupen64plus-next"], "phase": 1},
+    {"folder": "dreamcast", "aliases": ["dreamcast"], "engines": ["flycast"], "phase": 2},
+    {"folder": "gbc", "aliases": ["gbc"], "engines": ["sameboy"], "phase": 1},
+    {"folder": "ps2", "aliases": ["ps2"], "engines": ["armsx2", "play"], "phase": 2},
+    {"folder": "gba", "aliases": ["gba"], "engines": ["mgba"], "phase": 1},
+    {"folder": "gc", "aliases": ["gamecube", "gc"], "engines": ["dolphin"], "phase": 2, "requiredTitles": ["Metroid Prime"]},
+    {"folder": "nds", "aliases": ["nds", "ds"], "engines": ["melonds-ds"], "phase": 1, "dualScreen": true, "lowerTouch": true, "requiredTitles": ["Cobalt Demo"]},
+    {"folder": "psp", "aliases": ["psp"], "engines": ["ppsspp"], "phase": 2},
+    {"folder": "wii", "aliases": ["wii"], "engines": ["dolphin"], "phase": 2, "flickerBurst": true, "requiredTitles": ["Super Mario Galaxy", "Super Mario Galaxy 2"]},
+    {"folder": "n3ds", "aliases": ["n3ds", "3ds"], "engines": ["azahar"], "phase": 2, "dualScreen": true, "lowerTouch": true, "requiredTitles": ["The Legend of Zelda: A Link Between Worlds"]},
+    {"folder": "ps3", "aliases": ["ps3"], "engines": ["aps3e"], "phase": 3},
+    {"folder": "wiiu", "aliases": ["wiiu"], "engines": ["cemu"], "phase": 3, "dualScreen": true},
+    {"folder": "windows", "aliases": ["windows", "win"], "engines": ["winlator"], "phase": 3},
+    {"folder": "switch", "aliases": ["switch"], "engines": ["eden"], "phase": 3}
+  ]
+}

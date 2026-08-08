@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""Generate the signed APK manifest for bundled Lucent core artifacts."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import tempfile
+from pathlib import Path
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def generate(registry_path: Path, library_dir: Path) -> dict:
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    by_filename: dict[str, dict] = {}
+    for row in registry.get("engines", []):
+        engine_id = row.get("id", "")
+        normalized = engine_id.replace("-", "_")
+        for filename in (
+            f"liblucent_core_{normalized}.so",
+            f"{engine_id}_libretro.so",
+            f"{normalized}_libretro.so",
+            f"lib{engine_id}_libretro.so",
+            f"lib{normalized}_libretro.so",
+        ):
+            by_filename[filename] = row
+
+    artifacts = []
+    for library in sorted(library_dir.glob("*.so")):
+        row = by_filename.get(library.name)
+        if row is None:
+            continue
+        source = row.get("source") or {}
+        artifacts.append({
+            "engineId": row["id"],
+            "fileName": library.name,
+            "sha256": sha256(library),
+            "sourceCommit": source.get("commit", ""),
+        })
+    return {"schemaVersion": 1, "artifacts": artifacts}
+
+
+def write_atomic(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=path.name + ".pending-", dir=str(path.parent)
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            json.dump(value, output, indent=2, sort_keys=True)
+            output.write("\n")
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary_name, path)
+    finally:
+        try:
+            os.unlink(temporary_name)
+        except FileNotFoundError:
+            pass
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--registry", required=True, type=Path)
+    parser.add_argument("--library-dir", required=True, type=Path)
+    parser.add_argument("--output", required=True, type=Path)
+    args = parser.parse_args()
+    write_atomic(args.output, generate(args.registry, args.library_dir))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
