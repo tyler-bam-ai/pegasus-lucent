@@ -2,6 +2,7 @@ package com.thorium.preview;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.net.Uri;
 import android.os.Build;
@@ -61,6 +62,14 @@ final class UpdateManager {
     }
 
     void checkAsync(boolean userInitiated) {
+        // Qualification builds must never silently self-update to a store
+        // build mid-test run once the public versionCode passes theirs. A
+        // user-initiated check from the dashboard remains available.
+        if (!userInitiated && isQualificationBuild()) {
+            setStatus("qualification", 1,
+                    "qualification build — auto-update disabled", false, false);
+            return;
+        }
         if (!running.compareAndSet(false, true)) return;
         setStatus("checking", 0.05, "Checking GitHub for updates…", false, false);
         Thread worker = new Thread(() -> {
@@ -124,12 +133,21 @@ final class UpdateManager {
         int remoteCode = manifest.optInt("companionVersionCode", currentCode);
         boolean appNew = remoteCode > currentCode;
 
+        // Verification is mandatory. A manifest that omits either sha field
+        // must fail the whole check before any bytes are downloaded, never
+        // fall back to installing an unverified artifact.
+        String themeSha = manifest.optString("themeSha256", "").trim();
+        String apkSha = manifest.optString("companionSha256", "").trim();
+        if ((themeNew && themeSha.isEmpty()) || (appNew && apkSha.isEmpty())) {
+            setStatus("error", 1, "Update manifest is missing a checksum", false, false);
+            return;
+        }
+
         if (themeNew) {
             setStatus("theme", 0.18, "Downloading the latest Lucent theme…",
                     appNew, false);
             File theme = new File(context.getCacheDir(), "pegasus-lucent-theme.zip");
-            download(manifest.optString("themeZipUrl"), theme, MAX_THEME,
-                    manifest.optString("themeSha256"));
+            download(manifest.optString("themeZipUrl"), theme, MAX_THEME, themeSha);
             setStatus("theme", 0.62, "Installing the theme update…", appNew, false);
             ThemeInstaller.installZip(theme, remoteTheme);
             theme.delete();
@@ -137,8 +155,7 @@ final class UpdateManager {
 
         if (appNew) {
             setStatus("software", 0.68, "Downloading the latest app update…", true, false);
-            download(manifest.optString("companionApkUrl"), updateFile(), MAX_APK,
-                    manifest.optString("companionSha256"));
+            download(manifest.optString("companionApkUrl"), updateFile(), MAX_APK, apkSha);
             setStatus("available", 1,
                     "Software update ready — choose Install or Later in Lucent", true, true);
         } else {
@@ -146,6 +163,47 @@ final class UpdateManager {
                     (userInitiated ? "Lucent is up to date" : "Updates checked");
             setStatus("complete", 1, message, false, false);
         }
+    }
+
+    /** True for qualification/debug installs. build.sh never flips
+     * android:debuggable in the repackaged manifest, so qualification builds
+     * keep the release flag; what actually distinguishes them is the shared
+     * Android debug signing identity (CN=Android Debug). The debuggable flag
+     * is still honored for locally built debug variants. */
+    private boolean isQualificationBuild() {
+        if ((context.getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0)
+            return true;
+        try {
+            android.content.pm.Signature[] signatures;
+            if (Build.VERSION.SDK_INT >= 28) {
+                PackageInfo info = context.getPackageManager().getPackageInfo(
+                        context.getPackageName(),
+                        android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES);
+                signatures = info.signingInfo == null ? null :
+                        info.signingInfo.getApkContentsSigners();
+            } else {
+                @SuppressWarnings("deprecation")
+                PackageInfo info = context.getPackageManager().getPackageInfo(
+                        context.getPackageName(),
+                        android.content.pm.PackageManager.GET_SIGNATURES);
+                signatures = info.signatures;
+            }
+            if (signatures == null) return false;
+            java.security.cert.CertificateFactory factory =
+                    java.security.cert.CertificateFactory.getInstance("X.509");
+            for (android.content.pm.Signature signature : signatures) {
+                java.security.cert.X509Certificate certificate =
+                        (java.security.cert.X509Certificate) factory.generateCertificate(
+                                new java.io.ByteArrayInputStream(signature.toByteArray()));
+                if (certificate.getSubjectX500Principal().getName()
+                        .contains("CN=Android Debug")) return true;
+            }
+        } catch (Exception error) {
+            // Fail open to normal update behavior; a store build must not be
+            // stranded without updates by a signature lookup error.
+            Log.w(TAG, "Unable to inspect signing identity", error);
+        }
+        return false;
     }
 
     private int currentVersionCode() {
@@ -206,6 +264,10 @@ final class UpdateManager {
             throws Exception {
         if (url == null || url.isEmpty() || !url.startsWith("https://"))
             throw new java.io.IOException("Missing secure update URL");
+        // Never accept a download that cannot be verified against the
+        // manifest, regardless of which caller forgot to require the field.
+        if (expectedSha == null || expectedSha.trim().isEmpty())
+            throw new java.io.IOException("Update manifest is missing a checksum");
         File parent = target.getParentFile();
         if (parent != null) parent.mkdirs();
         File partial = new File(target.getAbsolutePath() + ".partial");
@@ -228,8 +290,7 @@ final class UpdateManager {
             }
         } finally { connection.disconnect(); }
         String actual = hex(digest.digest());
-        if (expectedSha != null && !expectedSha.isEmpty() &&
-                !actual.equalsIgnoreCase(expectedSha)) {
+        if (!actual.equalsIgnoreCase(expectedSha.trim())) {
             partial.delete();
             throw new java.io.IOException("Update checksum does not match");
         }

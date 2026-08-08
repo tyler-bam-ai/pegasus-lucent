@@ -459,6 +459,12 @@ final class ImportManager {
                 // long artwork/video pass is interrupted. Publish the ROM
                 // record immediately, then enrich it in place below.
                 writeMetadata(registry);
+                // Only now that the registry row and metadata are durable is
+                // the plain-file Downloads source safe to remove. In-place
+                // games are their own source and must never be deleted.
+                if (candidate.zipEntry == null && !candidate.inPlace &&
+                        !candidate.source.equals(game.rom))
+                    candidate.source.delete();
                 if (candidate.zipEntry != null)
                     archiveSuccesses.put(candidate.source,
                             archiveSuccesses.getOrDefault(candidate.source, 0) + 1);
@@ -838,8 +844,12 @@ final class ImportManager {
 
         if (target.isFile()) {
             if (candidate.zipEntry == null && sameContent(candidate.source, target)) {
-                candidate.source.delete();
-                return null;
+                // The verified payload already lives in the library, but its
+                // registry row may be missing (interrupted earlier scan, lost
+                // registry). Republish the row; the caller deletes the
+                // duplicate Downloads source only after that row and its
+                // metadata have committed.
+                return new ImportedGame(candidate, target);
             }
             // Crash-safe archive recovery: Android may stop the service in
             // the tiny interval after the verified payload is renamed but
@@ -874,9 +884,10 @@ final class ImportManager {
             partial.delete();
             return null;
         }
-        if (candidate.zipEntry == null) {
-            candidate.source.delete();
-        }
+        // The Downloads source is deleted by the caller only after this ROM's
+        // registry row and metadata have committed, mirroring the archive
+        // sweep. Deleting here would lose the game if the service dies before
+        // the commit: the source would be gone and no row would exist.
         return new ImportedGame(candidate, target);
     }
 

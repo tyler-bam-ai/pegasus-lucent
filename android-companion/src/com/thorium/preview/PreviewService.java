@@ -21,12 +21,25 @@ import java.io.BufferedWriter;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class PreviewService extends Service {
     public static final String ACTION_UPDATE = "com.thorium.preview.UPDATE";
@@ -85,6 +98,44 @@ public final class PreviewService extends Service {
         }
     };
     private ServerSocket server;
+    // Requests are handled off the accept loop on a small bounded pool so a
+    // single stalled client can never wedge the whole localhost control plane.
+    // The queue is bounded too: overflow requests are refused at accept time
+    // instead of piling up behind a slow endpoint.
+    private final ExecutorService httpWorkers = new ThreadPoolExecutor(
+            2, 2, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(16),
+            new java.util.concurrent.ThreadFactory() {
+                private final AtomicInteger index = new AtomicInteger();
+                @Override public Thread newThread(Runnable task) {
+                    Thread thread = new Thread(task,
+                            "thor-preview-http-" + index.incrementAndGet());
+                    thread.setDaemon(true);
+                    return thread;
+                }
+            });
+
+    // Every endpoint that changes state (including /launch/status and
+    // /heartbeat, which consume or resurrect preview state when read).
+    // Read-only endpoints — /capabilities, /library/index, /import/status,
+    // /update/status, /archive/list, /audit/artwork, and the root probe —
+    // stay callable without a token.
+    private static final Set<String> MUTATING_ENDPOINTS = new HashSet<>(Arrays.asList(
+            "/play", "/heartbeat", "/hide", "/transition", "/blank", "/led",
+            "/settings/sound", "/game/rename", "/game/delete", "/import/scan",
+            "/import/initial", "/import/reload", "/maintenance/rescan",
+            "/browser/open", "/update/check", "/update/install",
+            "/archive/include", "/launch/status"));
+    // The port is reachable by every application on the device, so mutating
+    // endpoints require a per-boot bearer token — except the ones below,
+    // which the FROZEN theme/theme.qml calls without one and which therefore
+    // stay open to local processes (residual risk accepted; browser CSRF is
+    // still blocked by the Origin/Referer rejection on every mutating path).
+    private static final Set<String> THEME_CALLED_ENDPOINTS = new HashSet<>(Arrays.asList(
+            "/play", "/heartbeat", "/hide", "/transition", "/blank", "/led",
+            "/settings/sound", "/game/rename", "/game/delete", "/import/scan",
+            "/import/reload", "/maintenance/rescan", "/browser/open",
+            "/update/check", "/update/install", "/launch/status"));
+    private volatile String controlToken = "";
     private UpdateManager updateManager;
     private LibraryIndexManager libraryIndexManager;
     private ThorLedManager thorLedManager;
@@ -97,6 +148,7 @@ public final class PreviewService extends Service {
         // installation, importer construction, or updater work can consume
         // the platform's five-second deadline.
         ensureForeground();
+        ensureControlToken();
         importManager = new ImportManager(this);
         updateManager = new UpdateManager(this);
         libraryIndexManager = new LibraryIndexManager();
@@ -202,12 +254,66 @@ public final class PreviewService extends Service {
         thread.start();
     }
 
+    /** Regenerates the per-boot control-plane token and publishes it to the
+     * app-private files directory for in-process callers. */
+    private void ensureControlToken() {
+        byte[] raw = new byte[32];
+        new SecureRandom().nextBytes(raw);
+        StringBuilder hex = new StringBuilder(raw.length * 2);
+        for (byte value : raw)
+            hex.append(String.format(Locale.US, "%02x", value & 0xff));
+        controlToken = hex.toString();
+        try (java.io.FileOutputStream out = new java.io.FileOutputStream(
+                new java.io.File(getFilesDir(), "control-plane-token"))) {
+            out.write(controlToken.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception error) {
+            Log.e("ThorPreview", "Unable to publish control-plane token", error);
+        }
+    }
+
+    private boolean tokenAuthorized(String headerToken, String queryToken) {
+        String expected = controlToken;
+        if (expected.isEmpty()) return false;
+        for (String provided : new String[] {headerToken, queryToken}) {
+            if (provided != null && MessageDigest.isEqual(
+                    expected.getBytes(StandardCharsets.UTF_8),
+                    provided.getBytes(StandardCharsets.UTF_8)))
+                return true;
+        }
+        return false;
+    }
+
     private void serve() {
         try {
-            server = new ServerSocket(PORT, 8, InetAddress.getByName("127.0.0.1"));
+            // SO_REUSEADDR lets a restarted service rebind immediately instead
+            // of losing the control port to a lingering TIME_WAIT socket. A
+            // few backoff retries cover the race where the previous service
+            // instance has not yet closed its listener.
+            ServerSocket listener = null;
+            for (int attempt = 0; listener == null; attempt++) {
+                ServerSocket binding = new ServerSocket();
+                try {
+                    binding.setReuseAddress(true);
+                    binding.bind(new InetSocketAddress(
+                            InetAddress.getByName("127.0.0.1"), PORT), 8);
+                    listener = binding;
+                } catch (java.io.IOException error) {
+                    binding.close();
+                    if (attempt >= 4 || !running) throw error;
+                    Thread.sleep(250L << attempt);
+                }
+            }
+            server = listener;
             while (running) {
                 Socket socket = server.accept();
-                handle(socket);
+                // A client that connects and then never writes must time out
+                // rather than hold a worker forever.
+                socket.setSoTimeout(5000);
+                try {
+                    httpWorkers.execute(() -> handle(socket));
+                } catch (RejectedExecutionException overloaded) {
+                    try { socket.close(); } catch (Exception ignored) {}
+                }
             }
         } catch (Exception ignored) {
             running = false;
@@ -228,6 +334,35 @@ public final class PreviewService extends Service {
             if (separator >= 0) {
                 path = target.substring(0, separator);
                 query = target.substring(separator + 1);
+            }
+            String origin = null;
+            String referer = null;
+            String headerToken = null;
+            String headerLine;
+            while ((headerLine = reader.readLine()) != null && !headerLine.isEmpty()) {
+                int colon = headerLine.indexOf(':');
+                if (colon <= 0) continue;
+                String name = headerLine.substring(0, colon).trim().toLowerCase(Locale.US);
+                String value = headerLine.substring(colon + 1).trim();
+                if ("origin".equals(name)) origin = value;
+                else if ("referer".equals(name)) referer = value;
+                else if ("x-lucent-auth".equals(name)) headerToken = value;
+            }
+            if (MUTATING_ENDPOINTS.contains(path)) {
+                // A browser cannot strip Origin/Referer from a cross-origin
+                // request, so their mere presence marks page-initiated CSRF —
+                // including from Lucent's own BrowserActivity.
+                if (origin != null || referer != null) {
+                    respond(writer, "403 Forbidden",
+                            "{\"error\":\"browser-originated request refused\"}");
+                    return;
+                }
+                if (!THEME_CALLED_ENDPOINTS.contains(path) &&
+                        !tokenAuthorized(headerToken, parseQuery(query).get("token"))) {
+                    respond(writer, "403 Forbidden",
+                            "{\"error\":\"missing or invalid control token\"}");
+                    return;
+                }
             }
 
             if ("/play".equals(path)) {
@@ -576,7 +711,6 @@ public final class PreviewService extends Service {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         writer.write("HTTP/1.1 " + status + "\r\n");
         writer.write("Content-Type: application/json\r\n");
-        writer.write("Access-Control-Allow-Origin: *\r\n");
         writer.write("Content-Length: " + bytes.length + "\r\n");
         writer.write("Connection: close\r\n\r\n");
         writer.write(body);
@@ -592,6 +726,7 @@ public final class PreviewService extends Service {
             if (server != null) server.close();
         } catch (Exception ignored) {
         }
+        httpWorkers.shutdownNow();
         super.onDestroy();
     }
 }

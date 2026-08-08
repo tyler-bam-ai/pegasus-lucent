@@ -29,6 +29,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
+import java.net.URI;
 import java.net.URLEncoder;
 
 /** A small browser that remains inside Lucent and routes ordinary web
@@ -113,7 +114,8 @@ public final class BrowserActivity extends Activity {
         settings.setUseWideViewPort(true);
         settings.setSupportMultipleWindows(false);
         settings.setAllowFileAccess(false);
-        settings.setAllowContentAccess(true);
+        settings.setAllowContentAccess(false);
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
 
@@ -241,9 +243,13 @@ public final class BrowserActivity extends Activity {
                 String effectiveUserAgent = userAgent == null || userAgent.isEmpty() ?
                         webView.getSettings().getUserAgentString() : userAgent;
                 request.addRequestHeader("User-Agent", effectiveUserAgent);
-                String cookie = CookieManager.getInstance().getCookie(url);
-                if (cookie != null && !cookie.isEmpty()) request.addRequestHeader("Cookie", cookie);
                 String referer = webView == null ? null : webView.getUrl();
+                // DownloadManager replays these headers verbatim across
+                // redirects, so a session cookie is only safe to attach while
+                // the download stays on the page's own host.
+                String cookie = CookieManager.getInstance().getCookie(url);
+                if (cookie != null && !cookie.isEmpty() && sameHost(url, referer))
+                    request.addRequestHeader("Cookie", cookie);
                 if (referer != null && !referer.isEmpty())
                     request.addRequestHeader("Referer", referer);
                 request.addRequestHeader("Accept", "*/*");
@@ -260,15 +266,29 @@ public final class BrowserActivity extends Activity {
                         getSystemService(Context.DOWNLOAD_SERVICE);
                 if (manager == null) throw new IllegalStateException("DownloadManager unavailable");
                 long downloadId = manager.enqueue(request);
-                Log.i(TAG, "Queued background download " + downloadId + " from " + url +
-                        " referer=" + referer);
+                // Download URLs regularly carry signed query tokens; keep them
+                // out of the log.
+                Log.i(TAG, "Queued background download " + downloadId +
+                        " host=" + downloadUri.getHost() + " file=" + fileName);
                 Toast.makeText(BrowserActivity.this,
                         "Background download started: " + fileName, Toast.LENGTH_LONG).show();
             } catch (Exception error) {
-                Log.e(TAG, "Download could not be started: " + url, error);
+                Log.e(TAG, "Download could not be started from host "
+                        + (url == null ? "?" : Uri.parse(url).getHost()), error);
                 Toast.makeText(BrowserActivity.this,
                         "Download failed to start: " + error.getMessage(), Toast.LENGTH_LONG).show();
             }
+        }
+    }
+
+    private static boolean sameHost(String downloadUrl, String pageUrl) {
+        try {
+            String downloadHost = new URI(downloadUrl).getHost();
+            String pageHost = pageUrl == null ? null : new URI(pageUrl).getHost();
+            return downloadHost != null && pageHost != null &&
+                    downloadHost.equalsIgnoreCase(pageHost);
+        } catch (Exception ignored) {
+            return false;
         }
     }
 
