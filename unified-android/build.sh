@@ -250,6 +250,15 @@ perl -0pi -e 's/android:launchMode="singleTop" android:name="org\.pegasus_fronte
     "$DECODED/AndroidManifest.xml"
 perl -0pi -e "s/versionCode: .*/versionCode: $VERSION_CODE/; s/versionName: .*/versionName: $VERSION_NAME/" \
     "$DECODED/apktool.yml"
+# SoundPool opens a raw resource through a file descriptor, which only works
+# when the entry is stored rather than deflated. apktool's default list does
+# not cover .wav, so a compressed menu sound made every Service creation throw
+# Resources$NotFoundException and crash-looped the app on launch.
+perl -0pi -e 's/^doNotCompress:\n/doNotCompress:\n- wav\n/m' "$DECODED/apktool.yml"
+grep -q '^- wav$' "$DECODED/apktool.yml" || {
+    printf 'apktool.yml is missing the wav doNotCompress entry\n' >&2
+    exit 1
+}
 perl -0pi -e 's/org\.pegasus_frontend\.android\.files/com.thorium.preview.files/g;
     s/"org\.pegasus_frontend\.android"/"com.thorium.preview"/g' \
     "$DECODED/smali/org/pegasus_frontend/android/MainActivity.smali" \
