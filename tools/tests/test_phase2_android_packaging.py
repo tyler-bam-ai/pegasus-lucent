@@ -160,6 +160,13 @@ class PhaseTwoAndroidPackagingTest(unittest.TestCase):
         self.assertIn('"Renderer policy engine="', session)
         self.assertIn('"Surface available engine="', session)
 
+    def test_both_sessions_emit_the_canonical_commit_marker(self):
+        # Every acceptance harness waits for this exact phrasing; the phase 2
+        # session silently diverging cost a real device run (36ef96d2 N64).
+        marker = '"Quick Resume committed engine="'
+        self.assertIn(marker, SESSION.read_text(encoding="utf-8"))
+        self.assertIn(marker, PHASE1_SESSION.read_text(encoding="utf-8"))
+
     def test_state_identity_binds_exact_packaged_core_artifact(self):
         phase2_catalog = CATALOG.read_text(encoding="utf-8")
         phase2_session = SESSION.read_text(encoding="utf-8")

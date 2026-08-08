@@ -689,6 +689,10 @@ final class PpssppGlesEngineSession implements EngineSession,
             if (requireCommit)
                 Log.i(TAG, "Committed Quick Resume before stop engine=" + entry.id +
                         " commit=" + entry.sourceCommit);
+            // Canonical commit marker shared with the Phase 1 session; every
+            // acceptance harness matches this exact engine/system phrasing.
+            Log.i(TAG, "Quick Resume committed engine=" + entry.id +
+                    " system=" + request.systemId);
             return null;
         } catch (Throwable failure) {
             // A failed state must not replace the last verified snapshot or
