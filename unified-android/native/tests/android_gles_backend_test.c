@@ -75,11 +75,14 @@ int main(int argc, char **argv) {
     CHECK(lucent_android_gles_get_host_options(backend, &options,
                                                error, sizeof(error)),
           "Android GLES host options failed");
+    /* Shared contexts are supported (the config carries EGL_PBUFFER_BIT and a
+     * core builds its worker contexts from the render thread's current
+     * context); debug contexts remain unimplemented and must stay refused. */
     CHECK((options.context_capabilities & LUCENT_RETRO_HW_GLES_VERSION) &&
           !(options.context_capabilities & LUCENT_RETRO_HW_VULKAN) &&
           (options.feature_capabilities & LUCENT_RETRO_HW_CACHE_CONTEXT) &&
-          !(options.feature_capabilities & (LUCENT_RETRO_HW_DEBUG_CONTEXT |
-                                            LUCENT_RETRO_HW_SHARED_CONTEXT)),
+          (options.feature_capabilities & LUCENT_RETRO_HW_SHARED_CONTEXT) &&
+          !(options.feature_capabilities & LUCENT_RETRO_HW_DEBUG_CONTEXT),
           "Android GLES capability gates mismatch");
     core_library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
     CHECK(core_library, "hardware mock core could not be inspected");

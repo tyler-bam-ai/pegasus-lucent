@@ -535,9 +535,22 @@ lucent_android_gles_backend *lucent_android_gles_create(
      * EGL context -> context_reset transition; on EGL_CONTEXT_LOST it omits the
      * unsafe destroy callback and resets the core after recovery. That is the
      * complete libretro contract used by GLideN64/Mupen64Plus-Next, so advertise
-     * cache_context while continuing to reject debug/shared-context requests
-     * that the backend does not implement. */
+     * cache_context while continuing to reject debug requests that the backend
+     * does not implement. */
     backend->feature_capabilities |= LUCENT_RETRO_HW_CACHE_CONTEXT;
+    /* Shared contexts are genuinely supported, not merely advertised. A core
+     * that asks for them creates its own worker contexts from the display and
+     * context that are current on the render thread, so Lucent's obligations
+     * are: (1) choose a config that can back an off-screen worker surface --
+     * choose_config always requests EGL_PBUFFER_BIT alongside EGL_WINDOW_BIT;
+     * (2) keep one context current on the render thread while the core runs,
+     * which the single render-owner thread guarantees; and (3) signal the
+     * ordered context_destroy -> context_reset transition whenever the context
+     * is replaced, which the surface-loss path already does, so a core can
+     * rebuild its worker contexts. Refusing this stalled Dolphin: with no
+     * shader-compiler worker it fell back to draw-skipping and then blocked
+     * inside retro_run waiting on a compile that could never be signalled. */
+    backend->feature_capabilities |= LUCENT_RETRO_HW_SHARED_CONTEXT;
     return backend;
 }
 
