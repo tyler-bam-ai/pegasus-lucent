@@ -172,6 +172,114 @@ class RuntimeAcceptanceQaTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             MODULE.title_position(keys, "Metroid Prime")
 
+    # ---- route closure after startup: external routing is legitimate --------
+
+    MAIN_ACTIVITY = (
+        "com.thorium.preview/org.pegasus_frontend.android.MainActivity")
+
+    def _internal_launch(self, engine, system):
+        return ("launch: am start -a com.thorium.preview.LAUNCH_INTERNAL_GAME "
+                f"-n {self.MAIN_ACTIVITY} "
+                f"--es engine_id {engine} --es system {system}")
+
+    def _external_view_install(self, package):
+        return ("launch: am start -a android.intent.action.VIEW "
+                f"-d https://play.google.com/store/apps/details?id={package}")
+
+    def _external_trampoline(self, package):
+        return ("launch: am start -a com.thorium.preview.LAUNCH_FILE "
+                "-n com.thorium.preview/com.thorium.preview.RomLaunchActivity "
+                '--es path "{file.path}" '
+                f"--es target_package {package} "
+                "--es target_activity .MainActivity "
+                "--es target_action android.intent.action.VIEW")
+
+    def _foreign_broadcast(self):
+        return ("launch: am broadcast -a android.intent.action.MAIN "
+                "-n org.foreign.launcher/.Receiver")
+
+    @staticmethod
+    def _route_text(*blocks):
+        lines = []
+        for shortname, launch in blocks:
+            lines.append(f"collection: {shortname.upper()}")
+            lines.append(f"shortname: {shortname}")
+            lines.append(launch)
+        return "\n".join(lines) + "\n"
+
+    def _post_startup_route_errors(self, route_text, sim_routes):
+        """Reproduce the harness's device-independent post-startup checks.
+
+        Mirrors run_runtime_acceptance_qa.main's invalidMetadataLaunchers and
+        internal route-closure comparison (the APK-bound verify() step needs a
+        real device and is exercised separately).
+        """
+        rc = MODULE.route_closure
+        errors = []
+        for row in rc.invalid_launch_lines(route_text):
+            errors.append("non-lucent launcher: " + str(row["commandSha256"]))
+        externals = MODULE.external_route_systems(route_text)
+        installed = rc.routes_from_text(route_text)
+        internal_installed = {r for r in installed if r.system not in externals}
+        expected_internal = {r for r in sim_routes if r.system not in externals}
+        if internal_installed != expected_internal:
+            errors.append("internal route difference")
+        return errors, externals
+
+    def test_startup_route_closure_tolerates_external_routes(self):
+        Route = MODULE.route_closure.Route
+        # Startup metadata mixes an internal route (nes->mesen), an external
+        # install page (switch, no packaged internal engine) and a user-set
+        # external system that DOES have an internal engine (n64->mupen in the
+        # internal-only simulation) routed out through the RomLaunchActivity
+        # trampoline. All three must pass the after-startup route-closure check.
+        route_text = self._route_text(
+            ("nes", self._internal_launch("mesen", "nes")),
+            ("switch", self._external_view_install("org.eden")),
+            ("n64", self._external_trampoline("org.mupen")),
+        )
+        sim_routes = {Route("nes", "mesen"), Route("n64", "mupen")}
+        errors, externals = self._post_startup_route_errors(route_text, sim_routes)
+        self.assertEqual(errors, [])
+        self.assertEqual(externals, {"switch", "n64"})
+
+    def test_startup_route_closure_still_fails_broken_internal_route(self):
+        Route = MODULE.route_closure.Route
+        # nes claims an internal in-window route to an engine the candidate does
+        # not package. It is NOT an external route, so it stays in the strict
+        # comparison and diverges from the simulation.
+        route_text = self._route_text(
+            ("nes", self._internal_launch("unpackaged", "nes")),
+            ("switch", self._external_view_install("org.eden")),
+        )
+        sim_routes = {Route("nes", "mesen")}
+        errors, externals = self._post_startup_route_errors(route_text, sim_routes)
+        self.assertIn("internal route difference", errors)
+        self.assertNotIn("nes", externals)
+
+    def test_startup_route_closure_still_fails_non_lucent_launcher(self):
+        Route = MODULE.route_closure.Route
+        route_text = self._route_text(
+            ("nes", self._internal_launch("mesen", "nes")),
+            ("gb", self._foreign_broadcast()),
+        )
+        sim_routes = {Route("nes", "mesen")}
+        errors, externals = self._post_startup_route_errors(route_text, sim_routes)
+        self.assertTrue(any(e.startswith("non-lucent launcher") for e in errors))
+        # A foreign broadcast is never mistaken for a legitimate external route.
+        self.assertEqual(externals, set())
+
+    def test_external_route_systems_ignores_internal_and_stale_launchers(self):
+        # Only lines that audit as "external-route" exempt their system.
+        stale_same_activity = (
+            "launch: am start "
+            f"-n {self.MAIN_ACTIVITY} --es engine_id mesen --es system nes")
+        route_text = self._route_text(
+            ("nes", self._internal_launch("mesen", "nes")),
+            ("snes", stale_same_activity),
+        )
+        self.assertEqual(MODULE.external_route_systems(route_text), set())
+
     def test_active_sort_detector_uses_selected_accent_in_frozen_geometry(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

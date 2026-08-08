@@ -1314,6 +1314,39 @@ def persist(path: Path, report: dict) -> None:
                     encoding="utf-8")
 
 
+def external_route_systems(route_text: str) -> set[str]:
+    """Canonical systems whose startup launch line is a legitimate EXTERNAL route.
+
+    Per-system external routing (docs/external-emulator-routing.md) is now a
+    product feature: a system with no packaged internal engine — or one a user
+    deliberately set to external — emits a plain ``am start`` (VIEW install page,
+    external component, or the RomLaunchActivity trampoline) instead of Lucent's
+    internal in-window launch. Those systems have no internal engine to match,
+    so they are exempt from the strict internal route-closure comparison.
+
+    The exemption is derived only from ``verify_menu_route_closure.launcher_audit``
+    classifying the line as ``external-route``; the strict internal contract for
+    every internal in-window launch line is untouched, and a non-Lucent / stale
+    launcher never audits as ``external-route`` so it is never exempted here.
+    """
+    externals: set[str] = set()
+    current_shortnames: list[str] = []
+    for raw in route_text.splitlines():
+        line = raw.strip()
+        if line.startswith("collection:"):
+            current_shortnames = []
+        elif line.startswith("shortname:"):
+            shortname = route_closure.normalized(line.split(":", 1)[1])
+            if shortname:
+                current_shortnames.append(shortname)
+        elif line.startswith("launch:"):
+            audit = route_closure.launcher_audit(line)
+            if audit and audit[0]["kind"] == "external-route":
+                for shortname in current_shortnames:
+                    externals.add(route_closure.canonical_system_id(shortname))
+    return externals
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--serial", required=True)
@@ -1459,16 +1492,31 @@ def main() -> int:
             "startup metadata has a non-Lucent launcher: " + row["commandSha256"]
             for row in post_invalid
         )
-    if installed_routes != routes:
+    # Per-system EXTERNAL routing is legitimate: a system that resolves external
+    # (its startup launch line audits as an "external-route") intentionally has
+    # no packaged internal engine, so it must NOT be required to match one. The
+    # strict internal closure below still holds for every INTERNAL in-window
+    # route — installed_routes only ever carries engine_id lines, which verify()
+    # already binds to an exact packaged engine, and invalidMetadataLaunchers
+    # still fails any non-Lucent launcher.
+    external_systems = external_route_systems(installed_route_text)
+    post_report["externalRoutedSystems"] = sorted(external_systems)
+    internal_installed_routes = {
+        route for route in installed_routes if route.system not in external_systems
+    }
+    expected_internal_routes = {
+        route for route in routes if route.system not in external_systems
+    }
+    if internal_installed_routes != expected_internal_routes:
         post_report["expectedCandidateRoutes"] = [
             {"system": route.system, "engine": route.engine}
-            for route in sorted(routes)
+            for route in sorted(expected_internal_routes)
         ]
         post_report["actualStartupRoutes"] = [
             {"system": route.system, "engine": route.engine}
-            for route in sorted(installed_routes)
+            for route in sorted(internal_installed_routes)
         ]
-        post_errors.append("startup routes differ from preinstall GameLaunchRouter simulation")
+        post_errors.append("startup internal routes differ from preinstall GameLaunchRouter simulation")
     report["routeClosureAfterStartup"] = post_report
     persist(result_path, report)
     if post_errors:
