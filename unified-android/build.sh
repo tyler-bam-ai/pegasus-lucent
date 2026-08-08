@@ -14,6 +14,20 @@ BUILD_DIR="$PROJECT_DIR/build"
 BUILD_LOCK="$BUILD_DIR/.lucent-build-lock"
 VERSION_NAME=3.2.15
 VERSION_CODE=89
+
+# An earlier build was invoked with the unprefixed names below, silently
+# defaulted every flag to 0, and produced a zero-core APK that passed its
+# gates. Refuse the build outright when a caller sets an unprefixed name.
+for stray_flag in INCLUDE_EXPERIMENTAL_CORES AUTOSELECT_EXPERIMENTAL_CORES \
+        REUSE_QUALIFICATION_CORES INCLUDE_PHASE2_PPSSPP REUSE_PHASE2_PPSSPP \
+        KEYSTORE STORE_PASS KEY_PASS KEY_ALIAS; do
+    if eval "[ \"\${$stray_flag+set}\" = set ]"; then
+        printf 'Refusing to build: %s is set but this build only reads LUCENT_%s\n' \
+            "$stray_flag" "$stray_flag" >&2
+        exit 1
+    fi
+done
+
 INCLUDE_EXPERIMENTAL_CORES=${LUCENT_INCLUDE_EXPERIMENTAL_CORES:-0}
 AUTOSELECT_EXPERIMENTAL_CORES=${LUCENT_AUTOSELECT_EXPERIMENTAL_CORES:-0}
 REUSE_QUALIFICATION_CORES=${LUCENT_REUSE_QUALIFICATION_CORES:-0}
@@ -413,16 +427,46 @@ else
     OUTPUT="$BUILD_DIR/lucent-$VERSION_NAME.apk"
 fi
 "$BUILD_TOOLS/zipalign" -f 4 "$UNSIGNED" "$ALIGNED"
-KEYSTORE=${LUCENT_KEYSTORE:-$ROOT_DIR/android-companion/debug.keystore}
-STORE_PASS=${LUCENT_STORE_PASS:-android}
+# Falling back to the debug keystore must be a stated choice, never the
+# silent result of a misspelled LUCENT_KEYSTORE. A release cannot be
+# produced by accident with the public debug identity.
+SIGNING_PROFILE=${LUCENT_SIGNING_PROFILE:-debug}
+case "$SIGNING_PROFILE" in
+    debug)
+        KEYSTORE=${LUCENT_KEYSTORE:-$ROOT_DIR/android-companion/debug.keystore}
+        STORE_PASS=${LUCENT_STORE_PASS:-android}
+        KEY_ALIAS=${LUCENT_KEY_ALIAS:-androiddebugkey}
+        ;;
+    release)
+        KEYSTORE=${LUCENT_KEYSTORE:?LUCENT_SIGNING_PROFILE=release requires LUCENT_KEYSTORE}
+        STORE_PASS=${LUCENT_STORE_PASS:?LUCENT_SIGNING_PROFILE=release requires LUCENT_STORE_PASS}
+        KEY_ALIAS=${LUCENT_KEY_ALIAS:?LUCENT_SIGNING_PROFILE=release requires LUCENT_KEY_ALIAS}
+        ;;
+    *)
+        printf 'LUCENT_SIGNING_PROFILE must be debug or release, not %s\n' \
+            "$SIGNING_PROFILE" >&2
+        exit 1
+        ;;
+esac
 KEY_PASS=${LUCENT_KEY_PASS:-$STORE_PASS}
-KEY_ALIAS=${LUCENT_KEY_ALIAS:-androiddebugkey}
+printf 'Signing profile: %s keystore=%s alias=%s\n' \
+    "$SIGNING_PROFILE" "$KEYSTORE" "$KEY_ALIAS" >&2
 "$BUILD_TOOLS/apksigner" sign --ks "$KEYSTORE" --ks-pass "pass:$STORE_PASS" \
     --key-pass "pass:$KEY_PASS" --ks-key-alias "$KEY_ALIAS" \
     --out "$OUTPUT" "$ALIGNED"
 "$BUILD_TOOLS/apksigner" verify --verbose "$OUTPUT" >/dev/null
 python3 "$PROJECT_DIR/tools/verify_one_app_apk.py" \
     --aapt "$BUILD_TOOLS/aapt" "$OUTPUT" >/dev/null
+# 16 KiB page-size policy. Lucent-built cores pin max-page-size at link
+# time, but the pinned Qt/frontend base libraries are historically 4 KiB
+# aligned, so the whole-APK check reports by default and only gates the
+# build when explicitly required (the release path must set it).
+if [ "${LUCENT_REQUIRE_16K_ALIGNMENT:-0}" = 1 ]; then
+    python3 "$PROJECT_DIR/tools/verify_elf_alignment.py" "$OUTPUT" >/dev/null
+elif ! python3 "$PROJECT_DIR/tools/verify_elf_alignment.py" "$OUTPUT" >/dev/null 2>&1; then
+    printf 'WARNING: %s contains 4 KiB-aligned native libraries (16 KiB policy not met)\n' \
+        "$OUTPUT" >&2
+fi
 if [ "$INCLUDE_EXPERIMENTAL_CORES" = 1 ]; then
     python3 "$PROJECT_DIR/tools/verify_phase1_apk.py" "$OUTPUT" >/dev/null
 fi
