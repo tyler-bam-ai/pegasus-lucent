@@ -676,6 +676,8 @@ static bool record_present_commands_for_target(
     };
     VkImageLayout source_layout = VK_IMAGE_LAYOUT_UNDEFINED;
     VkImage source = VK_NULL_HANDLE;
+    VkClearColorValue opaque_black;
+    VkImageSubresourceRange whole_image;
     if (vkResetCommandBuffer(command, 0) != VK_SUCCESS ||
             vkBeginCommandBuffer(command, &begin) != VK_SUCCESS) {
         set_error(error, error_size, "cannot begin Vulkan presentation commands");
@@ -687,6 +689,22 @@ static bool record_present_commands_for_target(
                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                   0, VK_ACCESS_TRANSFER_WRITE_BIT,
                   VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED);
+    /* Swapchain images are recycled, and an aspect-preserving blit only covers
+     * the letterboxed destination rectangle.  Without an unconditional clear
+     * the pillarbox/letterbox rows keep whatever the recycled buffer held: the
+     * never-written initial content (transparent, so the Lucent library behind
+     * the gameplay window shows through) or a stale band left by an earlier,
+     * wider core output size.  Clear the complete image to opaque black on
+     * every frame so presentation owns every pixel it publishes. */
+    memset(&opaque_black, 0, sizeof(opaque_black));
+    opaque_black.float32[3] = 1.0f;
+    memset(&whole_image, 0, sizeof(whole_image));
+    whole_image.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    whole_image.levelCount = 1;
+    whole_image.layerCount = 1;
+    vkCmdClearColorImage(command, destination_image,
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         &opaque_black, 1, &whole_image);
     if (backend->has_core_image && source_width && source_height) {
         VkImageBlit blit;
         uint32_t destination_width;
@@ -748,17 +766,6 @@ static bool record_present_commands_for_target(
                           VK_ACCESS_SHADER_READ_BIT,
                           VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED);
         }
-    } else {
-        VkClearColorValue black;
-        VkImageSubresourceRange range;
-        memset(&black, 0, sizeof(black));
-        memset(&range, 0, sizeof(range));
-        range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        range.levelCount = 1;
-        range.layerCount = 1;
-        vkCmdClearColorImage(command, destination_image,
-                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                             &black, 1, &range);
     }
     image_barrier(command, destination_image,
                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,

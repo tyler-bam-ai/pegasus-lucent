@@ -71,6 +71,40 @@ class PhaseTwoArmsx2Test(unittest.TestCase):
         self.assertIn("-DANDROID_PLATFORM=android-26", case)
         self.assertIn('-DCMAKE_SHARED_LINKER_FLAGS="-Wl,--build-id=none"', case)
 
+    def test_vulkan_presentation_owns_every_published_window_pixel(self):
+        backend = (ROOT / "unified-android" / "native" /
+                   "lucent_android_vulkan_backend.c").read_text(encoding="utf-8")
+        record = backend.split(
+            "static bool record_present_commands_for_target", 1)[1].split(
+                "\nstatic bool record_present_commands(", 1)[0]
+        # An aspect-preserving blit covers only the letterboxed destination
+        # rectangle of a recycled swapchain image.  Every frame must clear the
+        # complete image to opaque black first, or the pillarbox rows keep the
+        # never-written (transparent) initial content and stale bands from an
+        # earlier, wider core output size.
+        self.assertEqual(1, record.count("vkCmdClearColorImage"))
+        self.assertIn("opaque_black.float32[3] = 1.0f;", record)
+        self.assertLess(record.index("vkCmdClearColorImage"),
+                        record.index("vkCmdBlitImage"))
+
+    def test_gameplay_layer_publishes_opaque_alpha_for_hardware_cores(self):
+        surface = (ROOT / "unified-android" / "src" / "com" / "thorium" /
+                   "preview" / "game" / "GameSurface.java").read_text(
+                           encoding="utf-8")
+        # vkCmdBlitImage copies the core's alpha channel, and the PS2 GS marks
+        # a fully opaque pixel 0x80.  An opaque TextureView is composited with
+        # SkBlendMode.SRC, which would publish that alpha as the gameplay
+        # window's coverage and blend the Lucent library through the game.
+        self.assertIn("setOpaque(false)", surface)
+        self.assertNotIn("setOpaque(true)", surface)
+        # Compositing over black is what makes the published alpha one, so both
+        # gameplay hosts must keep an opaque backdrop under the video surface.
+        for host in ("InWindowGameHost.java", "LucentGameActivity.java"):
+            source = (ROOT / "unified-android" / "src" / "com" / "thorium" /
+                      "preview" / "game" / host).read_text(encoding="utf-8")
+            backdrop = source.index("setBackgroundColor(Color.BLACK)")
+            self.assertLess(backdrop, source.index("new GameSurface("))
+
     def test_checked_in_registry_passes_strict_armsx2_policy(self):
         self.assertEqual([], VALIDATOR.validate(REGISTRY_PATH))
 

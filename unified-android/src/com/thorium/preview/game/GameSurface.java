@@ -20,7 +20,17 @@ public final class GameSurface extends TextureView
     public GameSurface(Context context) {
         super(context);
         setFocusable(false);
-        setOpaque(true);
+        // A TextureView marked opaque is composited with SkBlendMode.SRC, so
+        // the engine buffer's alpha channel becomes the gameplay window's
+        // alpha and SurfaceFlinger blends the Lucent library through it.
+        // Hardware cores legitimately publish RGB with non-opaque alpha (the
+        // PS2 GS marks a fully opaque pixel 0x80, and untouched swapchain rows
+        // are zero), so an opaque layer published the library at 50% over
+        // ARMSX2 gameplay. Compositing over the gameplay root's opaque black
+        // background instead keeps premultiplied RGB and forces the published
+        // window alpha to one, which is exactly what the GLES backend's
+        // force_opaque_surface_alpha() does inside its own context.
+        setOpaque(false);
         setSurfaceTextureListener(this);
     }
 
