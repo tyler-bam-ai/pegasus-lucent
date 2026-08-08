@@ -46,15 +46,30 @@ def load_alignments(data: bytes) -> list[int]:
     return alignments
 
 
-def verify(apk: Path) -> list[str]:
+def verify(apk: Path, allow_4k: "frozenset[str] | set[str] | tuple[str, ...]" = ()) -> list[str]:
+    """Return blocking errors; allowlisted 4 KiB offenders become warnings.
+
+    ``allow_4k`` entries are bare library names (``libssl.so``); a matching
+    library that is only 4 KiB aligned is reported through :func:`warnings_for`
+    instead of failing the check. Everything else must be 16 KiB aligned.
+    """
+    errors, _warnings = verify_report(apk, allow_4k)
+    return errors
+
+
+def verify_report(
+    apk: Path, allow_4k: "frozenset[str] | set[str] | tuple[str, ...]" = ()
+) -> tuple[list[str], list[str]]:
+    allowed = {Path(name).name for name in allow_4k}
     errors: list[str] = []
+    warnings: list[str] = []
     with zipfile.ZipFile(apk) as archive:
         libraries = sorted(
             name for name in archive.namelist()
             if name.startswith("lib/arm64-v8a/") and name.endswith(".so")
         )
         if not libraries:
-            return ["APK contains no ARM64 libraries"]
+            return ["APK contains no ARM64 libraries"], warnings
         for name in libraries:
             try:
                 alignments = load_alignments(archive.read(name))
@@ -63,22 +78,40 @@ def verify(apk: Path) -> list[str]:
                 continue
             low = min(alignments)
             if low < MIN_ALIGNMENT:
-                errors.append(
+                message = (
                     f"{name}: PT_LOAD alignment 0x{low:x} is below 0x{MIN_ALIGNMENT:x}"
                 )
-    return errors
+                if Path(name).name in allowed:
+                    warnings.append(message + " (allowlisted; must be fixed before release)")
+                else:
+                    errors.append(message)
+    return errors, warnings
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("apk", type=Path)
+    parser.add_argument(
+        "--allow-4k-lib", action="append", default=[], metavar="NAME",
+        help="library name whose 4 KiB alignment is a known, temporary "
+             "offender; reported as a warning instead of an error "
+             "(repeatable)",
+    )
     args = parser.parse_args()
-    errors = verify(args.apk)
+    errors, warnings = verify_report(args.apk, args.allow_4k_lib)
+    for warning in warnings:
+        print(f"WARNING: {warning}", file=sys.stderr)
     if errors:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
         raise SystemExit(1)
-    print("Lucent 16 KiB ELF alignment: PASS")
+    if warnings:
+        print(
+            f"Lucent 16 KiB ELF alignment: PASS with {len(warnings)} "
+            "allowlisted 4 KiB offender(s)"
+        )
+    else:
+        print("Lucent 16 KiB ELF alignment: PASS")
 
 
 if __name__ == "__main__":

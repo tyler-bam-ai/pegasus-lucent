@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 
@@ -73,8 +74,25 @@ def main() -> int:
     parser.add_argument("--registry", required=True, type=Path)
     parser.add_argument("--library-dir", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument(
+        "--expected-count", type=int, default=None, metavar="N",
+        help="fail unless exactly N registered core artifacts are found; a "
+             "build that stages cores must never emit an empty (or partial) "
+             "manifest silently",
+    )
     args = parser.parse_args()
-    write_atomic(args.output, generate(args.registry, args.library_dir))
+    manifest = generate(args.registry, args.library_dir)
+    actual = len(manifest["artifacts"])
+    if args.expected_count is not None and actual != args.expected_count:
+        found = ", ".join(
+            row["fileName"] for row in manifest["artifacts"]) or "none"
+        print(
+            f"ERROR: expected exactly {args.expected_count} registered core "
+            f"artifact(s) in {args.library_dir}, found {actual} ({found})",
+            file=sys.stderr,
+        )
+        return 1
+    write_atomic(args.output, manifest)
     return 0
 
 

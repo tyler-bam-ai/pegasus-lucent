@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -64,6 +65,29 @@ I/LucentInWindow: Returned to Lucent immediately in same window engine=mesen sys
         )
         self.assertFalse(result.passed)
         self.assertIn("no in-window return marker was captured", result.errors)
+
+    def test_expected_apk_sha256_is_required_on_the_command_line(self):
+        completed = subprocess.run(
+            [sys.executable, str(TOOL), "/nonexistent"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(2, completed.returncode)
+        self.assertIn("--expected-apk-sha256", completed.stderr)
+
+    def test_evidence_identity_binding_fails_closed(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        evidence = Path(temporary.name)
+        with self.assertRaises(SystemExit) as caught:
+            MODULE.require_apk_identity(evidence, "ab" * 32)
+        self.assertIn("records no APK identity", str(caught.exception))
+        (evidence / "results.json").write_text(
+            json.dumps({"apkSha256": "cd" * 32}), encoding="utf-8",
+        )
+        with self.assertRaises(SystemExit) as caught:
+            MODULE.require_apk_identity(evidence, "ab" * 32)
+        self.assertIn("never transfers across SHAs", str(caught.exception))
+        MODULE.require_apk_identity(evidence, "cd" * 32)
 
     def test_stored_pass_cannot_hide_stored_splash_ocr(self):
         temporary = tempfile.TemporaryDirectory()

@@ -332,6 +332,74 @@ Window #1 Window{def u0 com.thorium.preview/com.thorium.preview.PreviewActivity}
             self.assertEqual(["mesen"], [row["engineId"] for row in qualification["artifacts"]])
             self.assertRegex(qualification["artifacts"][0]["sha256"], r"^[0-9a-f]{64}$")
 
+    def test_unprefixed_build_flags_are_rejected_before_any_default(self):
+        # The zero-core-APK incident: unprefixed flags silently defaulted every
+        # gate to 0. The guard must run BEFORE the first LUCENT_ assignment.
+        guard = BUILD.index("for stray_flag in INCLUDE_EXPERIMENTAL_CORES")
+        first_default = BUILD.index(
+            "INCLUDE_EXPERIMENTAL_CORES=${LUCENT_INCLUDE_EXPERIMENTAL_CORES:-0}"
+        )
+        self.assertLess(guard, first_default)
+        for name in (
+            "INCLUDE_EXPERIMENTAL_CORES", "AUTOSELECT_EXPERIMENTAL_CORES",
+            "REUSE_QUALIFICATION_CORES", "INCLUDE_PHASE2_PPSSPP",
+            "REUSE_PHASE2_PPSSPP", "KEYSTORE", "STORE_PASS", "KEY_PASS",
+            "KEY_ALIAS",
+        ):
+            self.assertRegex(
+                BUILD,
+                r"for stray_flag in [^\n]*(?:\\\n[^\n]*)*\b" + name + r"\b",
+            )
+        self.assertIn(
+            'this build only reads LUCENT_%s', BUILD,
+        )
+
+    def test_misspelled_lucent_flags_are_rejected(self):
+        unknown_guard = BUILD.index(
+            "LUCENT_INCLUDE_*|LUCENT_REUSE_*|LUCENT_AUTOSELECT_*)"
+        )
+        first_default = BUILD.index(
+            "INCLUDE_EXPERIMENTAL_CORES=${LUCENT_INCLUDE_EXPERIMENTAL_CORES:-0}"
+        )
+        self.assertLess(unknown_guard, first_default)
+        self.assertIn("unknown build flag", BUILD)
+        for known in (
+            "LUCENT_INCLUDE_EXPERIMENTAL_CORES)",
+            "LUCENT_AUTOSELECT_EXPERIMENTAL_CORES)",
+            "LUCENT_REUSE_QUALIFICATION_CORES)",
+            "LUCENT_INCLUDE_PHASE2_PPSSPP)",
+            "LUCENT_REUSE_PHASE2_PPSSPP)",
+        ):
+            self.assertIn(known, BUILD)
+
+    def test_signing_profile_is_explicit_and_debug_builds_are_loud(self):
+        self.assertIn('SIGNING_PROFILE=${LUCENT_SIGNING_PROFILE:-debug}', BUILD)
+        self.assertIn(
+            'KEYSTORE=${LUCENT_KEYSTORE:?LUCENT_SIGNING_PROFILE=release '
+            'requires LUCENT_KEYSTORE}', BUILD,
+        )
+        self.assertIn(
+            'STORE_PASS=${LUCENT_STORE_PASS:?LUCENT_SIGNING_PROFILE=release '
+            'requires LUCENT_STORE_PASS}', BUILD,
+        )
+        self.assertIn(
+            'KEY_ALIAS=${LUCENT_KEY_ALIAS:?LUCENT_SIGNING_PROFILE=release '
+            'requires LUCENT_KEY_ALIAS}', BUILD,
+        )
+        self.assertIn("DEBUG-SIGNED (qualification only)", BUILD)
+        self.assertIn(
+            'LUCENT_SIGNING_PROFILE must be debug or release', BUILD,
+        )
+
+    def test_alignment_verifier_gates_every_apk_after_one_app_check(self):
+        one_app = BUILD.index("verify_one_app_apk.py")
+        alignment = BUILD.index("verify_elf_alignment.py")
+        self.assertLess(one_app, alignment)
+        # No warn-only escape hatch: outside the strict release mode the
+        # verifier still gates with the explicit allowlist.
+        self.assertNotIn("16 KiB policy not met", BUILD)
+        self.assertIn('--allow-4k-lib "$allowed_4k_lib"', BUILD)
+
     def test_base_apk_and_dependencies_are_sha256_pinned(self):
         self.assertRegex(BUILD, r"BASE_SHA256=[0-9a-f]{64}")
         dependency_hashes = re.findall(r'^\s*"([0-9a-f]{64})"\s*$', BUILD, re.M)

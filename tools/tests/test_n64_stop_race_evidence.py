@@ -1,5 +1,8 @@
 import importlib.util
+import json
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -59,6 +62,30 @@ I/LucentInWindow: Exit checkpoint finished after library return engine=mupen64pl
 """)
         self.assertFalse(result.passed)
         self.assertTrue(any("exit ordering" in error for error in result.errors))
+
+    def test_expected_apk_sha256_is_required_on_the_command_line(self):
+        completed = subprocess.run(
+            [sys.executable, str(TOOL), "/nonexistent"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(2, completed.returncode)
+        self.assertIn("--expected-apk-sha256", completed.stderr)
+
+    def test_evidence_identity_binding_fails_closed(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        evidence = Path(temporary.name)
+        with self.assertRaises(SystemExit) as caught:
+            MODULE.require_apk_identity(evidence, "ab" * 32)
+        self.assertIn("records no APK identity", str(caught.exception))
+        (evidence / "results.json").write_text(
+            json.dumps({"exactInstall": {"installedSha256": "cd" * 32}}),
+            encoding="utf-8",
+        )
+        with self.assertRaises(SystemExit) as caught:
+            MODULE.require_apk_identity(evidence, "ab" * 32)
+        self.assertIn("never transfers across SHAs", str(caught.exception))
+        MODULE.require_apk_identity(evidence, "CD" * 32)
 
     def test_slow_return_is_not_hidden_by_successful_commit(self):
         result = MODULE.audit("""

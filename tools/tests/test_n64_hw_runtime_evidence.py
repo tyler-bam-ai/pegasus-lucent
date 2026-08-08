@@ -1,5 +1,8 @@
 import importlib.util
+import json
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -50,6 +53,64 @@ I/LucentGlesBackend: pre-swap pixels sequence=1 policy=2 path=2 window=1,2,3,255
         self.assertEqual(result.hardware_contexts, ("OPENGLES3",))
         self.assertEqual(result.context_reset_count, 1)
         self.assertEqual(result.presented_frame_count, 1)
+
+    def make_evidence(self, **contents) -> Path:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        evidence = Path(temporary.name)
+        for name, payload in contents.items():
+            path = evidence / name.replace("__", ".")
+            if isinstance(payload, (dict, list)):
+                path.write_text(json.dumps(payload), encoding="utf-8")
+            else:
+                path.write_text(payload, encoding="utf-8")
+        return evidence
+
+    def test_expected_apk_sha256_is_required_on_the_command_line(self):
+        completed = subprocess.run(
+            [sys.executable, str(TOOL), "/nonexistent"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(2, completed.returncode)
+        self.assertIn("--expected-apk-sha256", completed.stderr)
+
+    def test_evidence_without_recorded_identity_fails_closed(self):
+        evidence = self.make_evidence()
+        with self.assertRaises(SystemExit) as caught:
+            MODULE.require_apk_identity(evidence, "ab" * 32)
+        self.assertIn("records no APK identity", str(caught.exception))
+
+    def test_evidence_from_a_different_apk_sha_is_rejected(self):
+        evidence = self.make_evidence(
+            results__json={"expectedSha256": "cd" * 32},
+        )
+        with self.assertRaises(SystemExit) as caught:
+            MODULE.require_apk_identity(evidence, "ab" * 32)
+        self.assertIn("never transfers across SHAs", str(caught.exception))
+
+    def test_matching_results_json_identity_passes(self):
+        for record in (
+            {"apkSha256": "AB" * 32},
+            {"expectedSha256": "ab" * 32},
+            {"exactInstall": {"installedSha256": "ab" * 32}},
+            {"exactInstall": {"candidateSha256": "ab" * 32}},
+        ):
+            evidence = self.make_evidence(results__json=record)
+            MODULE.require_apk_identity(evidence, "ab" * 32)
+
+    def test_installed_base_sha256_marker_file_binds_identity(self):
+        evidence = self.make_evidence(
+            **{"installed-base-sha256__txt": ("ab" * 32) + "  base.apk\n"},
+        )
+        MODULE.require_apk_identity(evidence, "AB" * 32)
+        with self.assertRaises(SystemExit):
+            MODULE.require_apk_identity(evidence, "cd" * 32)
+
+    def test_malformed_expected_hash_is_rejected(self):
+        evidence = self.make_evidence(results__json={"apkSha256": "ab" * 32})
+        with self.assertRaises(SystemExit) as caught:
+            MODULE.require_apk_identity(evidence, "not-a-sha")
+        self.assertIn("64-digit hex", str(caught.exception))
 
     def test_zero_sequence_is_not_presented_frame_proof(self):
         result = MODULE.audit("""

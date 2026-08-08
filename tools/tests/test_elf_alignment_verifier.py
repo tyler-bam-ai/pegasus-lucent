@@ -48,6 +48,59 @@ class ElfAlignmentVerifierTest(unittest.TestCase):
         self.assertEqual(1, len(errors))
         self.assertIn("below 0x4000", errors[0])
 
+    def test_allowlisted_4k_library_becomes_warning_not_error(self):
+        apk = self.make_apk(0x1000)
+        errors, warnings = MODULE.verify_report(apk, ["liblucent_test.so"])
+        self.assertEqual([], errors)
+        self.assertEqual(1, len(warnings))
+        self.assertIn("liblucent_test.so", warnings[0])
+        self.assertIn("allowlisted", warnings[0])
+
+    def test_allowlist_does_not_cover_other_libraries(self):
+        apk = self.make_apk(0x1000)
+        errors, warnings = MODULE.verify_report(apk, ["libssl.so"])
+        self.assertEqual([], warnings)
+        self.assertEqual(1, len(errors))
+        self.assertIn("liblucent_test.so", errors[0])
+
+    def test_allowlisted_16k_library_produces_no_warning(self):
+        apk = self.make_apk(0x4000)
+        errors, warnings = MODULE.verify_report(apk, ["liblucent_test.so"])
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+
+    def test_verify_accepts_allowlist_for_compatibility(self):
+        self.assertEqual(
+            [], MODULE.verify(self.make_apk(0x1000), ["liblucent_test.so"])
+        )
+
+    def test_build_script_gates_on_the_hardcoded_allowlist(self):
+        build = (ROOT / "unified-android" / "build.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("ALLOWED_4K_LIBS=", build)
+        self.assertIn("--allow-4k-lib", build)
+        self.assertIn("MUST SHRINK TO ZERO BEFORE RELEASE", build)
+        # The release path stays strict: no allowlist at all.
+        self.assertIn(
+            'if [ "${LUCENT_REQUIRE_16K_ALIGNMENT:-0}" = 1 ]; then\n'
+            '    python3 "$PROJECT_DIR/tools/verify_elf_alignment.py" "$OUTPUT" >/dev/null',
+            build,
+        )
+        # Libraries known to be correctly 16 KiB aligned must never be waived.
+        allowlist = build.split("ALLOWED_4K_LIBS=\"", 1)[1].split('"', 1)[0]
+        for aligned in (
+            "liblucent_libretro_host.so",
+            "liblucent_vulkan_host.so",
+            "liblucent_core_blastem.so",
+            "liblucent_core_mupen64plus_next.so",
+            "liblucent_core_dosbox_pure.so",
+            "liblucent_core_armsx2.so",
+            "liblucent_core_dolphin.so",
+            "liblucent_core_scummvm.so",
+        ):
+            self.assertNotIn(aligned, allowlist.split())
+
 
 if __name__ == "__main__":
     unittest.main()

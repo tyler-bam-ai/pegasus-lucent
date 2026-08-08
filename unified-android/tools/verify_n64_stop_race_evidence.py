@@ -137,13 +137,79 @@ def read_logs(evidence: Path) -> str:
     )
 
 
+def recorded_apk_sha256(evidence: Path) -> str | None:
+    """Return the APK identity the evidence bundle was captured from.
+
+    Mirrors what the QA runners write: run_runtime_acceptance_qa.py records
+    ``expectedSha256`` plus ``exactInstall.{candidateSha256,installedSha256}``
+    in results.json, run_phase1a_activity_qa.py records ``apkSha256``, and a
+    bare ``installed-base-sha256.txt`` file is accepted as a manual marker.
+    """
+    results = evidence / "results.json"
+    if results.is_file():
+        try:
+            root = json.loads(results.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            root = None
+        if isinstance(root, dict):
+            candidates: list[object] = [
+                root.get("apkSha256"), root.get("expectedSha256"),
+            ]
+            install = root.get("exactInstall")
+            if isinstance(install, dict):
+                candidates += [
+                    install.get("installedSha256"),
+                    install.get("candidateSha256"),
+                ]
+            for value in candidates:
+                if isinstance(value, str) and re.fullmatch(
+                        r"[0-9a-fA-F]{64}", value):
+                    return value.lower()
+    marker = evidence / "installed-base-sha256.txt"
+    if marker.is_file():
+        fields = marker.read_text(encoding="utf-8").split()
+        if fields and re.fullmatch(r"[0-9a-fA-F]{64}", fields[0]):
+            return fields[0].lower()
+    return None
+
+
+def require_apk_identity(evidence: Path, expected_sha256: str) -> None:
+    """Evidence never transfers across SHAs; fail closed on any mismatch."""
+    expected = expected_sha256.strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", expected):
+        raise SystemExit(
+            f"--expected-apk-sha256 must be a 64-digit hex SHA-256, got "
+            f"{expected_sha256!r}"
+        )
+    recorded = recorded_apk_sha256(evidence)
+    if recorded is None:
+        raise SystemExit(
+            f"evidence bundle {evidence} records no APK identity "
+            "(results.json apkSha256/expectedSha256/exactInstall or "
+            "installed-base-sha256.txt); evidence never transfers across SHAs"
+        )
+    if recorded != expected:
+        raise SystemExit(
+            f"evidence bundle {evidence} was captured from APK {recorded}, "
+            f"not the expected {expected}; evidence never transfers across "
+            "SHAs"
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("evidence", type=Path)
+    parser.add_argument(
+        "--expected-apk-sha256", required=True,
+        help="SHA-256 of the exact APK this evidence must have been captured "
+             "from; the bundle must record the same hash",
+    )
     parser.add_argument("--maximum-return-latency-ms", type=int, default=50)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    result = audit(read_logs(args.evidence.resolve()),
+    evidence = args.evidence.resolve()
+    require_apk_identity(evidence, args.expected_apk_sha256)
+    result = audit(read_logs(evidence),
                    args.maximum_return_latency_ms)
     report = {
         "pass": result.passed,

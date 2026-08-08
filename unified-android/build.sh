@@ -27,6 +27,24 @@ for stray_flag in INCLUDE_EXPERIMENTAL_CORES AUTOSELECT_EXPERIMENTAL_CORES \
         exit 1
     fi
 done
+# A misspelled LUCENT_ flag (LUCENT_INCLUDE_EXPERIMENTAL_CORE, ...) would be
+# just as silently ignored as an unprefixed one. Reject every core-selection
+# style LUCENT_ name this build does not actually read.
+for lucent_flag in $(env | LC_ALL=C sed -n 's/^\(LUCENT_[A-Za-z0-9_]*\)=.*/\1/p'); do
+    case "$lucent_flag" in
+        LUCENT_INCLUDE_EXPERIMENTAL_CORES) ;;
+        LUCENT_AUTOSELECT_EXPERIMENTAL_CORES) ;;
+        LUCENT_REUSE_QUALIFICATION_CORES) ;;
+        LUCENT_INCLUDE_PHASE2_PPSSPP) ;;
+        LUCENT_REUSE_PHASE2_PPSSPP) ;;
+        LUCENT_INCLUDE_*|LUCENT_REUSE_*|LUCENT_AUTOSELECT_*)
+            printf 'Refusing to build: unknown build flag %s (known flags: LUCENT_INCLUDE_EXPERIMENTAL_CORES LUCENT_AUTOSELECT_EXPERIMENTAL_CORES LUCENT_REUSE_QUALIFICATION_CORES LUCENT_INCLUDE_PHASE2_PPSSPP LUCENT_REUSE_PHASE2_PPSSPP)\n' \
+                "$lucent_flag" >&2
+            exit 1
+            ;;
+        *) ;;
+    esac
+done
 
 INCLUDE_EXPERIMENTAL_CORES=${LUCENT_INCLUDE_EXPERIMENTAL_CORES:-0}
 AUTOSELECT_EXPERIMENTAL_CORES=${LUCENT_AUTOSELECT_EXPERIMENTAL_CORES:-0}
@@ -256,11 +274,18 @@ cp "$BUILD_DIR/native/arm64-v8a/liblucent_libretro_host.so" \
     "$DECODED/lib/arm64-v8a/liblucent_libretro_host.so"
 cp "$BUILD_DIR/native/arm64-v8a/liblucent_vulkan_host.so" \
     "$DECODED/lib/arm64-v8a/liblucent_vulkan_host.so"
+# The engine-artifact manifests must list exactly the cores this flag
+# combination stages: zero for the no-cores release path, and the length of
+# the hardcoded core lists for qualification paths. Count each staged copy so
+# a zero-core (or partially staged) APK can never pass the manifest gate.
+PHASE1_STAGED_CORE_COUNT=0
+PHASE2_STAGED_CORE_COUNT=0
 if [ "$INCLUDE_EXPERIMENTAL_CORES" = 1 ]; then
     for qualification_core in mesen mesen-s sameboy mgba gearsystem swanstation melonds-ds fuse mame dosbox-pure prosystem beetle-pce-fast beetle-neopop beetle-cygne blastem mupen64plus-next; do
         normalized_core=$(printf '%s' "$qualification_core" | tr '-' '_')
         cp "$ROOT_DIR/engines/build/arm64-v8a/${qualification_core}_libretro.so" \
             "$DECODED/lib/arm64-v8a/liblucent_core_${normalized_core}.so"
+        PHASE1_STAGED_CORE_COUNT=$((PHASE1_STAGED_CORE_COUNT + 1))
     done
     cp "$ROOT_DIR/engines/qualification-opt-in.json" \
         "$DECODED/assets/engine-qualification-opt-in.json"
@@ -291,6 +316,7 @@ if [ "$INCLUDE_PHASE2_PPSSPP" = 1 ]; then
         normalized_core=$(printf '%s' "$phase2_core" | tr '-' '_')
         cp "$ROOT_DIR/engines/build/arm64-v8a/${phase2_core}_libretro.so" \
             "$DECODED/lib/arm64-v8a/liblucent_core_${normalized_core}.so"
+        PHASE2_STAGED_CORE_COUNT=$((PHASE2_STAGED_CORE_COUNT + 1))
     done
     cp "$ROOT_DIR/engines/phase2-registry.json" \
         "$DECODED/assets/phase2-engine-registry.json"
@@ -365,6 +391,7 @@ if [ "$INCLUDE_PHASE2_PPSSPP" = 1 ]; then
     python3 "$PROJECT_DIR/tools/generate_engine_artifact_manifest.py" \
         --registry "$ROOT_DIR/engines/phase2-registry.json" \
         --library-dir "$DECODED/lib/arm64-v8a" \
+        --expected-count "$PHASE2_STAGED_CORE_COUNT" \
         --output "$DECODED/assets/phase2-engine-artifacts.json"
     python3 "$PROJECT_DIR/tools/generate_phase2_sbom.py" \
         --registry "$ROOT_DIR/engines/phase2-registry.json" \
@@ -383,6 +410,7 @@ fi
 python3 "$PROJECT_DIR/tools/generate_engine_artifact_manifest.py" \
     --registry "$ROOT_DIR/engines/registry.json" \
     --library-dir "$DECODED/lib/arm64-v8a" \
+    --expected-count "$PHASE1_STAGED_CORE_COUNT" \
     --output "$DECODED/assets/engine-artifacts.json"
 
 # Compile all Java services together. The QtApplication stub is compile-only;
@@ -457,15 +485,93 @@ printf 'Signing profile: %s keystore=%s alias=%s\n' \
 "$BUILD_TOOLS/apksigner" verify --verbose "$OUTPUT" >/dev/null
 python3 "$PROJECT_DIR/tools/verify_one_app_apk.py" \
     --aapt "$BUILD_TOOLS/aapt" "$OUTPUT" >/dev/null
-# 16 KiB page-size policy. Lucent-built cores pin max-page-size at link
-# time, but the pinned Qt/frontend base libraries are historically 4 KiB
-# aligned, so the whole-APK check reports by default and only gates the
-# build when explicitly required (the release path must set it).
+# 16 KiB page-size policy. The allowlist below is the exact 4 KiB-aligned
+# set measured in lucent-3.2.15-phase2-qualification-cc15c076... (the pinned
+# Qt/frontend base libraries plus the cores whose recipes do not yet pin
+# max-page-size). Every library NOT named here must be 16 KiB aligned, so a
+# new or regressed 4 KiB library fails the build immediately.
+# THIS LIST MUST SHRINK TO ZERO BEFORE RELEASE; LUCENT_REQUIRE_16K_ALIGNMENT=1
+# (the release path) ignores it and gates on every library.
+ALLOWED_4K_LIBS="
+libQt5AndroidExtras_arm64-v8a.so
+libQt5Core_arm64-v8a.so
+libQt5Gamepad_arm64-v8a.so
+libQt5Gui_arm64-v8a.so
+libQt5MultimediaQuick_arm64-v8a.so
+libQt5Multimedia_arm64-v8a.so
+libQt5Network_arm64-v8a.so
+libQt5QmlModels_arm64-v8a.so
+libQt5QmlWorkerScript_arm64-v8a.so
+libQt5Qml_arm64-v8a.so
+libQt5QuickParticles_arm64-v8a.so
+libQt5QuickShapes_arm64-v8a.so
+libQt5Quick_arm64-v8a.so
+libQt5Sql_arm64-v8a.so
+libQt5Svg_arm64-v8a.so
+libc++_shared.so
+libcrypto.so
+liblucent_core_applewin.so
+liblucent_core_azahar.so
+liblucent_core_beetle_cygne.so
+liblucent_core_beetle_neopop.so
+liblucent_core_beetle_pce_fast.so
+liblucent_core_beetle_saturn.so
+liblucent_core_flycast.so
+liblucent_core_fuse.so
+liblucent_core_gearsystem.so
+liblucent_core_mame.so
+liblucent_core_melonds_ds.so
+liblucent_core_mesen.so
+liblucent_core_mesen_s.so
+liblucent_core_mgba.so
+liblucent_core_play.so
+liblucent_core_ppsspp.so
+liblucent_core_prosystem.so
+liblucent_core_puae.so
+liblucent_core_sameboy.so
+liblucent_core_swanstation.so
+liblucent_core_virtualjaguar.so
+libpegasus-fe_arm64-v8a.so
+libplugins_audio_qtaudio_opensles_arm64-v8a.so
+libplugins_gamepads_androidgamepad_arm64-v8a.so
+libplugins_iconengines_qsvgicon_arm64-v8a.so
+libplugins_imageformats_qgif_arm64-v8a.so
+libplugins_imageformats_qicns_arm64-v8a.so
+libplugins_imageformats_qico_arm64-v8a.so
+libplugins_imageformats_qjpeg_arm64-v8a.so
+libplugins_imageformats_qsvg_arm64-v8a.so
+libplugins_imageformats_qtga_arm64-v8a.so
+libplugins_imageformats_qwbmp_arm64-v8a.so
+libplugins_imageformats_qwebp_arm64-v8a.so
+libplugins_mediaservice_qtmedia_android_arm64-v8a.so
+libplugins_platforms_qtforandroid_arm64-v8a.so
+libplugins_playlistformats_qtmultimedia_m3u_arm64-v8a.so
+libplugins_sqldrivers_qsqlite_arm64-v8a.so
+libplugins_video_videonode_qtsgvideonode_android_arm64-v8a.so
+libqml_QtGraphicalEffects_private_qtgraphicaleffectsprivate_arm64-v8a.so
+libqml_QtGraphicalEffects_qtgraphicaleffectsplugin_arm64-v8a.so
+libqml_QtMultimedia_declarative_multimedia_arm64-v8a.so
+libqml_QtQml_Models.2_modelsplugin_arm64-v8a.so
+libqml_QtQml_StateMachine_qtqmlstatemachine_arm64-v8a.so
+libqml_QtQml_WorkerScript.2_workerscriptplugin_arm64-v8a.so
+libqml_QtQml_qmlplugin_arm64-v8a.so
+libqml_QtQuick.2_qtquick2plugin_arm64-v8a.so
+libqml_QtQuick_Layouts_qquicklayoutsplugin_arm64-v8a.so
+libqml_QtQuick_Particles.2_particlesplugin_arm64-v8a.so
+libqml_QtQuick_Shapes_qmlshapesplugin_arm64-v8a.so
+libqml_QtQuick_Timeline_qtquicktimelineplugin_arm64-v8a.so
+libqml_QtQuick_Window.2_windowplugin_arm64-v8a.so
+libqml_Qt_labs_qmlmodels_labsmodelsplugin_arm64-v8a.so
+libssl.so
+"
 if [ "${LUCENT_REQUIRE_16K_ALIGNMENT:-0}" = 1 ]; then
     python3 "$PROJECT_DIR/tools/verify_elf_alignment.py" "$OUTPUT" >/dev/null
-elif ! python3 "$PROJECT_DIR/tools/verify_elf_alignment.py" "$OUTPUT" >/dev/null 2>&1; then
-    printf 'WARNING: %s contains 4 KiB-aligned native libraries (16 KiB policy not met)\n' \
-        "$OUTPUT" >&2
+else
+    set --
+    for allowed_4k_lib in $ALLOWED_4K_LIBS; do
+        set -- "$@" --allow-4k-lib "$allowed_4k_lib"
+    done
+    python3 "$PROJECT_DIR/tools/verify_elf_alignment.py" "$@" "$OUTPUT" >/dev/null
 fi
 if [ "$INCLUDE_EXPERIMENTAL_CORES" = 1 ]; then
     python3 "$PROJECT_DIR/tools/verify_phase1_apk.py" "$OUTPUT" >/dev/null
@@ -490,5 +596,14 @@ if [ -f "$IMMUTABLE_OUTPUT" ]; then
     fi
 else
     cp "$OUTPUT" "$IMMUTABLE_OUTPUT"
+fi
+if [ "$SIGNING_PROFILE" = debug ]; then
+    printf '############################################################\n' >&2
+    printf '# DEBUG-SIGNED (qualification only): %s\n' "$IMMUTABLE_OUTPUT" >&2
+    printf '# This APK carries the public debug identity and MUST NOT\n' >&2
+    printf '# be released. Set LUCENT_SIGNING_PROFILE=release with\n' >&2
+    printf '# LUCENT_KEYSTORE/LUCENT_STORE_PASS/LUCENT_KEY_ALIAS to sign\n' >&2
+    printf '# a releasable artifact.\n' >&2
+    printf '############################################################\n' >&2
 fi
 printf '%s\n' "$IMMUTABLE_OUTPUT"
