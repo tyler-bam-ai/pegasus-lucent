@@ -153,6 +153,7 @@ class PhaseTwoAndroidPackagingTest(unittest.TestCase):
         self.assertIn('final int presentationPolicy = ("flycast".equals(entry.id) ||',
                       session)
         self.assertIn('"ppsspp".equals(entry.id) ||', session)
+        self.assertIn('"mupen64plus-next".equals(entry.id) ||', session)
         self.assertIn('"dolphin".equals(entry.id)) ?', session)
         self.assertIn(".PRESENT_FRONTEND_FBO", session)
         self.assertIn(".PRESENT_DIRECT_WINDOW", session)

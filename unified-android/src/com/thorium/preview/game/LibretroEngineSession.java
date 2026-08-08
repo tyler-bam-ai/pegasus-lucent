@@ -110,12 +110,16 @@ public final class LibretroEngineSession implements EngineSession,
     private boolean frameEvidenceLogged;
     private Bitmap frameBitmap;
     private int[] frameColors;
-    private AudioTrack audioTrack;
+    // Written on the lifecycle thread during prepare and read on the frame
+    // thread. Thread.start() already publishes them, but volatile keeps any
+    // future writer (audio recovery, restore) safe without re-auditing.
+    private volatile AudioTrack audioTrack;
     private short[] pendingAudio;
     private int pendingAudioOffset;
     private int primedAudioSamples;
-    private int audioPrimeSamplesTarget;
+    private volatile int audioPrimeSamplesTarget;
     private volatile boolean audioStartedOnce;
+    private boolean audioSilenceWarned;
     private long audioStartedAtMillis;
     private boolean steadyAudioBufferApplied;
     private File saveRamFile;
@@ -176,6 +180,15 @@ public final class LibretroEngineSession implements EngineSession,
                                 (long) (1_000_000_000.0 / av.framesPerSecond));
                     audioTrack = createAudioTrack(av.sampleRate);
                     audioPrimeSamplesTarget = startupAudioBufferBytes(av.sampleRate) / 2;
+                    if (audioTrack == null)
+                        // A dead track must be loud in the log: every later
+                        // write silently no-ops and the game plays mute.
+                        Log.w(TAG, "Audio track unavailable engine=" + entry.id +
+                                " rate=" + av.sampleRate);
+                    else
+                        Log.i(TAG, "Audio track ready engine=" + entry.id +
+                                " rate=" + (int) Math.round(av.sampleRate) +
+                                " primeTargetSamples=" + audioPrimeSamplesTarget);
                     long previousActive = 0L;
                     if (!"scummvm".equals(entry.id)) {
                         String engineIdentity = entry.sourceCommit + ":sha256:" +
@@ -644,12 +657,30 @@ public final class LibretroEngineSession implements EngineSession,
         double targetFps = 1_000_000_000.0 / framePeriodNs;
         long measuredAudioFrames = Math.max(0L,
                 qualificationAudioFramesWritten - qualificationAudioFramesAtWindowStart);
+        // The playback head only advances when the mixer consumes PCM, so it
+        // separates "samples written to a stalled track" from audible output.
+        // Frames-written alone has already produced a false audio PASS.
+        int audioHead = 0;
+        AudioTrack audio = audioTrack;
+        if (audio != null)
+            try { audioHead = audio.getPlaybackHeadPosition(); }
+            catch (IllegalStateException ignored) {}
         Log.i(TAG, String.format(Locale.ROOT,
                 "Runtime telemetry engine=%s system=%s frames=%d elapsedMs=%d " +
-                "measuredFps=%.3f targetFps=%.3f audioFrames=%d audioStarted=%s",
+                "measuredFps=%.3f targetFps=%.3f audioFrames=%d audioStarted=%s " +
+                "audioHead=%d",
                 entry.id, request.systemId, QUALIFICATION_MEASURED_FRAMES,
                 elapsed / 1_000_000L, measuredFps, targetFps,
-                measuredAudioFrames, audioStartedOnce));
+                measuredAudioFrames, audioStartedOnce, audioHead));
+        if (!audioSilenceWarned && (!audioStartedOnce || audioHead == 0)) {
+            audioSilenceWarned = true;
+            Log.w(TAG, "Audio silent after measurement window engine=" + entry.id +
+                    " trackPresent=" + (audio != null) +
+                    " started=" + audioStartedOnce +
+                    " primed=" + primedAudioSamples +
+                    " primeTarget=" + audioPrimeSamplesTarget +
+                    " head=" + audioHead);
+        }
         // Keep emitting non-overlapping rolling windows. The physical gate may
         // reject a transiently interrupted first sample and require a later
         // sustained window without hiding persistently slow emulation.
@@ -986,6 +1017,8 @@ public final class LibretroEngineSession implements EngineSession,
                 audio.play();
                 audioStartedOnce = true;
                 audioStartedAtMillis = SystemClock.elapsedRealtime();
+                Log.i(TAG, "Audio playback started engine=" + entry.id +
+                        " primedSamples=" + primedAudioSamples);
             }
             applySteadyAudioBuffer(audio);
         } catch (Throwable ignored) {}

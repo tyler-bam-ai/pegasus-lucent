@@ -98,6 +98,7 @@ final class PpssppGlesEngineSession implements EngineSession,
     private volatile boolean audioStartedOnce;
     private long audioStartedAtMillis;
     private boolean steadyAudioBufferApplied;
+    private boolean audioSilenceWarned;
     private long presentedFrames;
     private long frameSampleStartedAtMillis;
     private long receivedAudioFrames;
@@ -234,8 +235,14 @@ final class PpssppGlesEngineSession implements EngineSession,
                                         "The experimental renderer stopped.", failure);
                             }
                         };
+                // GLideN64 honors get_current_framebuffer(), so N64 must use
+                // the frontend FBO path: direct-window presentation let the
+                // core draw through its own 2880x2880 viewport into the
+                // 1920x1080 window, pushing gameplay off-center to the left
+                // with the right edge cropped (818adab8 N64 evidence).
                 final int presentationPolicy = ("flycast".equals(entry.id) ||
                         "ppsspp".equals(entry.id) ||
+                        "mupen64plus-next".equals(entry.id) ||
                         "dolphin".equals(entry.id)) ?
                         com.thorium.preview.ExperimentalGlesLibretroHost
                                 .PRESENT_FRONTEND_FBO :
@@ -859,6 +866,8 @@ final class PpssppGlesEngineSession implements EngineSession,
                 audio.play();
                 audioStartedOnce = true;
                 audioStartedAtMillis = SystemClock.elapsedRealtime();
+                Log.i(TAG, "Audio playback started engine=" + entry.id +
+                        " primedSamples=" + primedAudioSamples);
             }
             applySteadyAudioBuffer(audio);
         } catch (Throwable failure) {
@@ -952,11 +961,27 @@ final class PpssppGlesEngineSession implements EngineSession,
         AudioTrack audio = audioTrack;
         int underruns = Build.VERSION.SDK_INT >= 24 && audio != null
                 ? audio.getUnderrunCount() : -1;
+        // The playback head only advances when the mixer consumes PCM, so it
+        // separates "samples written to a stalled track" from audible output.
+        int audioHead = 0;
+        if (audio != null)
+            try { audioHead = audio.getPlaybackHeadPosition(); }
+            catch (IllegalStateException ignored) {}
         Log.i(TAG, "Health engine=" + entry.id + " fps=" +
                 String.format(Locale.US, "%.2f", fps) + " frames=" + presentedFrames +
                 " audioUnderruns=" + underruns + " audioReceived=" +
                 receivedAudioFrames + " audioWritten=" + writtenAudioFrames +
-                " audioRate=" + (audio == null ? 0 : audio.getSampleRate()));
+                " audioRate=" + (audio == null ? 0 : audio.getSampleRate()) +
+                " audioStarted=" + audioStartedOnce + " audioHead=" + audioHead);
+        if (!audioSilenceWarned && (audio == null || !audioStartedOnce || audioHead == 0)) {
+            audioSilenceWarned = true;
+            Log.w(TAG, "Audio silent after health window engine=" + entry.id +
+                    " trackPresent=" + (audio != null) +
+                    " started=" + audioStartedOnce +
+                    " primed=" + primedAudioSamples +
+                    " primeTarget=" + audioPrimeSamplesTarget +
+                    " head=" + audioHead);
+        }
     }
 
     private void releaseAudio() {
@@ -967,6 +992,7 @@ final class PpssppGlesEngineSession implements EngineSession,
         audioStartedOnce = false;
         audioStartedAtMillis = 0L;
         steadyAudioBufferApplied = false;
+        audioSilenceWarned = false;
         presentedFrames = 0L;
         frameSampleStartedAtMillis = 0L;
         receivedAudioFrames = 0L;
