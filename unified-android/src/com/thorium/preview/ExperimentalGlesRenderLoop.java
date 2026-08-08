@@ -52,6 +52,10 @@ public final class ExperimentalGlesRenderLoop implements Closeable {
     }
 
     private static final long DEFAULT_FRAME_DELAY_NANOS = 1_000_000_000L / 60L;
+    // UI-thread destroy callbacks release their Surface the moment they
+    // return; the native detach must finish first, but may never stall the
+    // UI thread longer than this bound.
+    private static final long SURFACE_DETACH_WAIT_MILLIS = 250L;
 
     private final ScheduledExecutorService executor;
     private final HostFactory factory;
@@ -283,6 +287,27 @@ public final class ExperimentalGlesRenderLoop implements Closeable {
         });
     }
 
+    /**
+     * Synchronous, bounded variant of {@link #detachSurface()} for the
+     * TextureView destroy callback, which releases the game Surface as soon
+     * as it returns.
+     *
+     * @return false when the bound elapsed first; the queued detach then
+     *         completes asynchronously on the render thread instead of
+     *         blocking the UI thread further.
+     */
+    public boolean detachSurfaceAndWait() {
+        return awaitDetach(() -> {
+            if (host == null) return;
+            if (secondarySurfaceAttached) host.detachSecondary();
+            secondarySurfaceAttached = false;
+            if (surfaceAttached) host.detach();
+            surfaceAttached = false;
+            awaitingRecreate = false;
+            nextFrameDeadlineNanos = 0L;
+        });
+    }
+
     public void attachSecondarySurface(Surface surface) {
         requireSurface(surface);
         post(() -> {
@@ -312,6 +337,45 @@ public final class ExperimentalGlesRenderLoop implements Closeable {
             secondarySurface = null;
             return null;
         });
+    }
+
+    /**
+     * Bounded variant of {@link #detachSecondarySurfaceAndWait()} for the
+     * lower SurfaceView destroy callback, whose Surface also dies on return.
+     *
+     * @return false when the bound elapsed and the detach will finish
+     *         asynchronously on the render thread.
+     */
+    public boolean detachSecondarySurfaceAndWaitBounded() {
+        return awaitDetach(() -> {
+            if (host != null && secondarySurfaceAttached) host.detachSecondary();
+            secondarySurfaceAttached = false;
+            secondarySurface = null;
+        });
+    }
+
+    private boolean awaitDetach(Runnable detach) {
+        if (closed) return true;
+        if (Thread.currentThread() == renderThread) {
+            detach.run();
+            return true;
+        }
+        final CountDownLatch finished = new CountDownLatch(1);
+        try {
+            executor.execute(() -> {
+                try { if (!closed) detach.run(); }
+                catch (Throwable failure) { reportError(failure); }
+                finally { finished.countDown(); }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException rejected) {
+            return true;
+        }
+        try {
+            return finished.await(SURFACE_DETACH_WAIT_MILLIS, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     public void resume() {

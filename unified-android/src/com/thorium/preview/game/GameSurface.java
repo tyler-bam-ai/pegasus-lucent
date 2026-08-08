@@ -44,6 +44,10 @@ public final class GameSurface extends TextureView
     }
 
     @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {
+        // The listener must finish (or abandon within a short bound) any
+        // render-thread detach before this returns: the Surface below is
+        // released immediately, and a swap still queued against it raises
+        // EGL_BAD_SURFACE on GLES sessions.
         if (listener != null) listener.onSurfaceDestroyed();
         if (renderSurface != null) {
             renderSurface.release();

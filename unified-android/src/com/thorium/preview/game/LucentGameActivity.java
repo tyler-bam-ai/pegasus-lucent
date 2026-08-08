@@ -31,6 +31,10 @@ public final class LucentGameActivity extends Activity
         implements GameSurface.Listener, EngineSession.Listener {
     private static final String TAG = "LucentGame";
     private static final long STOP_HOLD_MS = 1000L;
+    // About three 60 fps frame periods: long enough that every core's next
+    // input poll observes the synthesized Select press, short enough to feel
+    // like a tap.
+    private static final long TAP_SELECT_HOLD_MS = 48L;
     private static final int COLOR_ACCENT = Color.rgb(151, 119, 255);
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -353,11 +357,22 @@ public final class LucentGameActivity extends Activity
             stopPressed = false;
             ++stopGeneration;
             if (!stopHoldTriggered && session != null) {
+                // Cores observe buttons by polling once per retro_run; a
+                // zero-width down/up pair between two polls is invisible.
+                // Latch the synthesized Select press across a few frame
+                // periods so at least one poll sees it.
+                final EngineSession target = session;
+                final KeyEvent up = event;
                 long now = event.getEventTime();
-                session.dispatchKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN,
+                target.dispatchKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN,
                         event.getKeyCode(), 0, event.getMetaState(), event.getDeviceId(),
                         event.getScanCode(), event.getFlags(), event.getSource()));
-                session.dispatchKeyEvent(event);
+                mainHandler.postDelayed(() -> {
+                    // If the session changed meanwhile, drop the release: the
+                    // old session is retiring and a new host starts with a
+                    // clean joypad mask.
+                    if (session == target) target.dispatchKeyEvent(up);
+                }, TAP_SELECT_HOLD_MS);
             }
             stopHoldTriggered = false;
             return true;

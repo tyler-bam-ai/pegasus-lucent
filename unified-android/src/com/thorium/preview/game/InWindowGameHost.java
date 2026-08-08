@@ -52,6 +52,10 @@ public final class InWindowGameHost
     // input poll observes the synthesized Select press, short enough to feel
     // like a tap.
     private static final long TAP_SELECT_HOLD_MS = 48L;
+    // Destroy-time bound on how long the quiesced game views may await a stop
+    // completion that never fires. The Activity is already being destroyed; a
+    // wedged engine must not leak its view tree indefinitely.
+    private static final long DESTROY_DETACH_FALLBACK_MS = 4000L;
     private static final int COLOR_ACCENT = Color.rgb(151, 119, 255);
     private static final java.util.regex.Pattern QUALIFICATION_SESSION =
             java.util.regex.Pattern.compile("qa-[0-9a-f]{32}");
@@ -666,11 +670,35 @@ public final class InWindowGameHost
             }
             // Release joins engine threads; it must never run on the UI
             // thread that Android is tearing the Activity down on.
-            if (exitStarted.get()) RETIREMENT_RELEASES.execute(ending::release);
-            else ending.stop(EngineSession.StopReason.ACTIVITY_DESTROYED,
-                    () -> RETIREMENT_RELEASES.execute(ending::release));
+            if (!exitStarted.get()) {
+                detachViewsAfterDestroyStop(ending);
+                return;
+            }
+            RETIREMENT_RELEASES.execute(ending::release);
         }
         detachViews();
+    }
+
+    private void detachViewsAfterDestroyStop(EngineSession ending) {
+        // The final Quick Resume serializes against the quiesced but still
+        // attached game root. Detach only after stop's completion fires; the
+        // bounded fallback keeps a completion that never arrives from leaking
+        // the destroyed Activity's view tree.
+        final AtomicBoolean viewsDetached = new AtomicBoolean(false);
+        final Runnable detachOnce = () -> {
+            if (viewsDetached.compareAndSet(false, true)) detachViews();
+        };
+        mainHandler.postDelayed(detachOnce, DESTROY_DETACH_FALLBACK_MS);
+        try {
+            ending.stop(EngineSession.StopReason.ACTIVITY_DESTROYED, () -> {
+                RETIREMENT_RELEASES.execute(ending::release);
+                mainHandler.post(detachOnce);
+            });
+        } catch (RuntimeException failure) {
+            Log.w(TAG, "Destroy-time stop failed", failure);
+            RETIREMENT_RELEASES.execute(ending::release);
+            mainHandler.post(detachOnce);
+        }
     }
 
     private void detachViews() {
@@ -706,7 +734,15 @@ public final class InWindowGameHost
     }
 
     @Override public void onSurfaceDestroyed() {
-        if (session != null) session.detachSurface();
+        EngineSession current = session;
+        if (current == null) return;
+        // TextureView releases the Surface the moment this callback returns.
+        // A GLES session detaches on its own render thread, so wait for its
+        // bounded synchronous detach; a queued swap on the dead surface is
+        // the historical EGL_BAD_SURFACE 0x300d route.
+        if (current instanceof PpssppGlesEngineSession)
+            ((PpssppGlesEngineSession) current).detachSurfaceAndWait();
+        else current.detachSurface();
     }
 
     @Override public void onSessionReady() {

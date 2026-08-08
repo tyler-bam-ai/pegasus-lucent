@@ -310,6 +310,30 @@ final class PpssppGlesEngineSession implements EngineSession,
         if (prepared && active != null) active.detachSurface();
     }
 
+    /**
+     * Bounded synchronous variant of {@link #detachSurface()} for the
+     * TextureView destroy callback: Android releases that Surface as soon as
+     * the callback returns, so the render thread must stop targeting it first
+     * or give up within the UI-safe bound and finish detaching asynchronously.
+     */
+    void detachSurfaceAndWait() {
+        surface = null;
+        ExperimentalGlesRenderLoop active = renderLoop;
+        boolean detached = true;
+        if (prepared && active != null) {
+            try {
+                detached = active.detachSurfaceAndWait();
+            } catch (RuntimeException failure) {
+                Log.w(TAG, "Bounded surface detach failed engine=" + entry.id, failure);
+            }
+        }
+        if (!detached)
+            Log.w(TAG, "Surface detach exceeded its UI bound; completing " +
+                    "asynchronously engine=" + entry.id);
+        Log.i(TAG, "Surface detached engine=" + entry.id +
+                " prepared=" + prepared + " waited=" + detached);
+    }
+
     @Override public void onSecondarySurfaceAvailable(
             Surface value, int width, int height) {
         voidDimensions(width, height);
@@ -322,7 +346,17 @@ final class PpssppGlesEngineSession implements EngineSession,
     @Override public void onSecondarySurfaceDestroyed() {
         secondarySurface = null;
         ExperimentalGlesRenderLoop active = renderLoop;
-        if (active != null) active.detachSecondarySurface();
+        if (active == null) return;
+        try {
+            // The lower-display SurfaceView is removed as soon as this
+            // notification returns; the swapchain detach must complete (or
+            // give up within the UI bound) before that removal.
+            if (!active.detachSecondarySurfaceAndWaitBounded())
+                Log.w(TAG, "Lower-display detach exceeded its UI bound engine=" +
+                        entry.id);
+        } catch (RuntimeException failure) {
+            Log.w(TAG, "Lower-display detach failed engine=" + entry.id, failure);
+        }
     }
 
     @Override public void onSecondaryTouch(
@@ -658,8 +692,11 @@ final class PpssppGlesEngineSession implements EngineSession,
             return null;
         } catch (Throwable failure) {
             // A failed state must not replace the last verified snapshot or
-            // strand the user while stopping qualification content.
-            Log.w(TAG, "Quick Resume was not updated for " + entry.id, failure);
+            // strand the user while stopping qualification content. The
+            // stable marker keeps the swallowed failure greppable by the
+            // runtime evidence verifiers.
+            Log.w(TAG, "Quick Resume was not updated for " + entry.id +
+                    " marker=save-failure", failure);
             return failure;
         }
     }

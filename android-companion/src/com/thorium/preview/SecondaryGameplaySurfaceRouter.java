@@ -84,6 +84,8 @@ public final class SecondaryGameplaySurfaceRouter {
             listener.onSecondarySurfaceAvailable(surface, width, height);
     }
 
+    /** Synchronous: returns only after the listener detached from the dying
+     * Surface (bounded), so callers may remove the view right after. */
     static synchronized void surfaceDestroyed(long candidate) {
         if (listener != null && generation == candidate)
             listener.onSecondarySurfaceDestroyed();

@@ -11,6 +11,7 @@ BRIDGE = ROOT / "android-companion" / "src" / "com" / "thorium" / "preview" / "I
 PATCHER = ROOT / "unified-android" / "tools" / "patch_main_activity_right_stick.py"
 GLES_SESSION = ROOT / "unified-android" / "src" / "com" / "thorium" / "preview" / "game" / "PpssppGlesEngineSession.java"
 GLES_LOOP = ROOT / "unified-android" / "src" / "com" / "thorium" / "preview" / "ExperimentalGlesRenderLoop.java"
+PREVIEW = ROOT / "android-companion" / "src" / "com" / "thorium" / "preview" / "PreviewActivity.java"
 
 
 class InWindowInstantReturnTest(unittest.TestCase):
@@ -199,6 +200,84 @@ class InWindowInstantReturnTest(unittest.TestCase):
         catch_block = stop.split("} catch (Throwable failure) {", 1)[1]
         self.assertIn("completion.complete();", catch_block)
         self.assertIn("onSessionStopRejected(", stop)
+
+    def test_destroy_defers_view_detach_until_stop_completion(self):
+        # Activity destroy must not detach the game views while the final
+        # ACTIVITY_DESTROYED checkpoint still serializes against them; the
+        # bounded fallback keeps a completion that never fires from leaking
+        # the destroyed Activity's view tree.
+        destroy = self.method("private void destroyNow()", "private void detachViews()")
+        self.assertIn("detachViewsAfterDestroyStop(ending);", destroy)
+        self.assertIn(
+            "mainHandler.postDelayed(detachOnce, DESTROY_DETACH_FALLBACK_MS);", destroy
+        )
+        completion = destroy.split("StopReason.ACTIVITY_DESTROYED", 1)[1]
+        self.assertIn("RETIREMENT_RELEASES.execute(ending::release);", completion)
+        self.assertIn("mainHandler.post(detachOnce);", completion)
+        self.assertIn("private static final long DESTROY_DETACH_FALLBACK_MS", self.source)
+
+    def test_texture_destroy_waits_for_bounded_gles_detach(self):
+        # TextureView releases its Surface as soon as the destroy callback
+        # returns, but the GLES detach is posted to the render thread. The
+        # host must wait for the session's bounded synchronous detach or a
+        # queued swap lands on the dead surface (EGL_BAD_SURFACE 0x300d).
+        destroyed = self.method(
+            "@Override public void onSurfaceDestroyed()",
+            "@Override public void onSessionReady()",
+        )
+        self.assertIn("detachSurfaceAndWait();", destroyed)
+        session = GLES_SESSION.read_text(encoding="utf-8")
+        wait = session.split("void detachSurfaceAndWait()", 1)[1].split(
+            "@Override public void onSecondarySurfaceAvailable", 1
+        )[0]
+        self.assertIn("active.detachSurfaceAndWait()", wait)
+        loop = GLES_LOOP.read_text(encoding="utf-8")
+        self.assertIn(
+            "private static final long SURFACE_DETACH_WAIT_MILLIS = 250L;", loop
+        )
+        self.assertIn("public boolean detachSurfaceAndWait()", loop)
+        bounded = loop.split("private boolean awaitDetach(Runnable detach)", 1)[1].split(
+            "public void resume()", 1
+        )[0]
+        self.assertIn(
+            "finished.await(SURFACE_DETACH_WAIT_MILLIS, TimeUnit.MILLISECONDS)", bounded
+        )
+
+    def test_lower_display_removal_waits_for_bounded_swapchain_detach(self):
+        # PreviewActivity removes the lower SurfaceView right after the
+        # destroyed notification; the session must therefore detach its
+        # swapchain synchronously (bounded) inside that notification.
+        session = GLES_SESSION.read_text(encoding="utf-8")
+        destroyed = session.split(
+            "@Override public void onSecondarySurfaceDestroyed()", 1
+        )[1].split("@Override public void onSecondaryTouch", 1)[0]
+        self.assertIn("detachSecondarySurfaceAndWaitBounded()", destroyed)
+        loop = GLES_LOOP.read_text(encoding="utf-8")
+        self.assertIn("public boolean detachSecondarySurfaceAndWaitBounded()", loop)
+        preview = PREVIEW.read_text(encoding="utf-8")
+        leave = preview.split("private void leaveGameplaySurface(", 1)[1]
+        self.assertLess(
+            leave.index("SecondaryGameplaySurfaceRouter.surfaceDestroyed("),
+            leave.index("root.removeView(existing);"),
+        )
+
+    def test_preview_destroy_survives_the_primary_display_reject_path(self):
+        # The display-0 reject path finishes before registerReceiver runs;
+        # onDestroy must not crash on the unregistered receiver and media
+        # teardown must still execute.
+        preview = PREVIEW.read_text(encoding="utf-8")
+        self.assertIn("private boolean receiverRegistered;", preview)
+        destroy = preview.split("protected void onDestroy()", 1)[1].split(
+            "private final class PlayerSlot", 1
+        )[0]
+        self.assertIn("if (receiverRegistered) unregisterReceiver(receiver);", destroy)
+        self.assertIn("finally {", destroy)
+        self.assertIn("leaveGameplaySurface(false);", destroy)
+        self.assertIn("stopPlayers();", destroy)
+        players = preview.split("private void stopPlayers()", 1)[1].split(
+            "private void applySoundEnabled", 1
+        )[0]
+        self.assertIn("if (slots == null) return;", players)
 
     def test_phase1_exit_save_failure_is_visible_not_swallowed(self):
         session = (ROOT / "unified-android" / "src" / "com" / "thorium" /

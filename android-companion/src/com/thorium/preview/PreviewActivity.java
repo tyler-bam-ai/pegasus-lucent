@@ -45,6 +45,11 @@ public final class PreviewActivity extends Activity {
     private SurfaceView gameplaySurface;
     private long gameplayGeneration;
     private PlayerSlot[] slots;
+    // The primary-display reject path finishes before any of the setup below
+    // runs, so onDestroy must know whether this instance ever registered its
+    // receiver or claimed the static visibility flags.
+    private boolean receiverRegistered;
+    private boolean ownsVisibilityFlags;
     private int activeSlot = -1;
     private boolean soundEnabled;
     private long selectionGeneration;
@@ -100,6 +105,7 @@ public final class PreviewActivity extends Activity {
             return;
         }
         running = true;
+        ownsVisibilityFlags = true;
         soundEnabled = getSharedPreferences("preview", MODE_PRIVATE)
                 .getBoolean(PreviewService.EXTRA_SOUND_ENABLED, false);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
@@ -118,6 +124,7 @@ public final class PreviewActivity extends Activity {
         registerReceiver(receiver, new IntentFilter(PreviewService.ACTION_BLANK));
         registerReceiver(receiver, new IntentFilter(PreviewService.ACTION_AUDIO));
         registerReceiver(receiver, new IntentFilter(PreviewService.ACTION_CLOSE));
+        receiverRegistered = true;
 
         gestures = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
             @Override
@@ -475,6 +482,8 @@ public final class PreviewActivity extends Activity {
     }
 
     private void stopPlayers() {
+        // The reject path skips buildUi, so the slots may never exist.
+        if (slots == null) return;
         for (PlayerSlot slot : slots) slot.release();
         activeSlot = -1;
     }
@@ -546,6 +555,8 @@ public final class PreviewActivity extends Activity {
             }
 
             @Override public void surfaceDestroyed(SurfaceHolder holder) {
+                // Synchronous and bounded: the Surface dies when this
+                // callback returns, so the engine must detach first.
                 SecondaryGameplaySurfaceRouter.surfaceDestroyed(gameplayGeneration);
             }
         });
@@ -566,6 +577,9 @@ public final class PreviewActivity extends Activity {
     private void leaveGameplaySurface(boolean restorePreviewViews) {
         SurfaceView existing = gameplaySurface;
         if (existing != null) {
+            // The router notification is synchronous and bounded: the
+            // engine's lower swapchain detaches (or abandons within its UI
+            // bound) before removeView tears the Surface down underneath it.
             SecondaryGameplaySurfaceRouter.surfaceDestroyed(gameplayGeneration);
             root.removeView(existing);
             gameplaySurface = null;
@@ -621,11 +635,21 @@ public final class PreviewActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        running = false;
-        resumed = false;
-        unregisterReceiver(receiver);
-        leaveGameplaySurface(false);
-        stopPlayers();
+        // A rejected primary-display instance never claimed the static flags;
+        // clearing them here would blind the watchdog to the real secondary
+        // instance and make it relaunch playback it never lost.
+        if (ownsVisibilityFlags) {
+            running = false;
+            resumed = false;
+        }
+        try {
+            if (receiverRegistered) unregisterReceiver(receiver);
+        } finally {
+            // Media teardown must run even if unregistering throws; leaked
+            // MediaPlayers keep decoder hardware allocated across restarts.
+            leaveGameplaySurface(false);
+            stopPlayers();
+        }
         super.onDestroy();
     }
 
