@@ -49,5 +49,16 @@ mkdir -p "$BUILD_DIR"
     -Wl,--no-undefined -Wl,-z,relro,-z,now $PAGE_SIZE_LDFLAGS \
     -ldl -landroid -llog -lvulkan \
     -o "$BUILD_DIR/liblucent_vulkan_host.so"
+# Phase 3 native-adapter host + JNI bridge. It carries no engine; a compiled
+# adapter .so (e.g. Cemu) is loaded at runtime through this host. The Vulkan API
+# level matches the adapter render kind. No engine symbols are linked here.
+"$VULKAN_CC" -std=c11 -O2 -fPIC -fvisibility=hidden -Wall -Wextra -Werror \
+    -I"$PROJECT_DIR/native/include" \
+    -shared "$PROJECT_DIR/native/lucent_native_adapter_host.c" \
+    "$PROJECT_DIR/native/lucent_native_adapter_jni.c" \
+    -Wl,--no-undefined -Wl,-z,relro,-z,now $PAGE_SIZE_LDFLAGS \
+    -ldl -landroid -llog \
+    -o "$BUILD_DIR/liblucent_native_adapter_host.so"
 printf '%s\n' "$BUILD_DIR/liblucent_libretro_host.so"
 printf '%s\n' "$BUILD_DIR/liblucent_vulkan_host.so"
+printf '%s\n' "$BUILD_DIR/liblucent_native_adapter_host.so"

@@ -27,11 +27,13 @@ public final class InternalEngineBootstrap {
                 // as an empty catalog, not a permanently blocked launch.
                 InternalEngineCatalog.bootstrapComplete();
                 Phase2QualificationCatalog.bootstrapComplete();
+                NativeAdapterCatalog.bootstrapComplete();
             }
         }, "lucent-engine-verify");
         verifier.setDaemon(true);
         InternalEngineCatalog.expectBootstrapOn(verifier);
         Phase2QualificationCatalog.expectBootstrapOn(verifier);
+        NativeAdapterCatalog.expectBootstrapOn(verifier);
         verifier.start();
     }
 
@@ -56,6 +58,16 @@ public final class InternalEngineBootstrap {
                             ? new LibretroEngineSession(sessionContext,
                                     LibretroEngineSpec.phaseTwo(entry))
                             : new PpssppGlesEngineSession(sessionContext, entry));
+            verified++;
+        }
+        for (final NativeAdapterCatalog.Entry entry :
+                NativeAdapterCatalog.entries(context)) {
+            // Phase 3 native-adapter engines (Wii U/Cemu first) are present only
+            // when the adapter .so is bundled and hash-verified; the catalog is
+            // empty and fail-closed until a real core ships, so this loop is a
+            // no-op today.
+            EngineSessionRegistry.register(entry.id, (sessionContext, request) ->
+                    new NativeAdapterEngineSession(sessionContext, entry));
             verified++;
         }
         Log.i(TAG, "Engine verification complete engines=" + verified +

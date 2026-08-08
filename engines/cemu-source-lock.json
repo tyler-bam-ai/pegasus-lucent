@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "engineId": "cemu",
+  "systems": ["wiiu"],
+  "route": "native-adapter",
+  "buildProfile": "android-arm64-native-adapter-vulkan",
+  "closureScope": "exact-staged-source-and-submodule-closure-for-this-build-profile",
+  "reproducible": false,
+  "reproducibleNote": "The Android ARM64 Cemu-as-adapter build is not yet byte-reproducible. This lock pins the upstream identity and records the adapter ABI contract; the multi-week core build (engines/build_native_adapter.sh) has not been implemented, so no artifactSha256/independentBuilds proof exists yet. The Java NativeAdapterCatalog stays fail-closed until a reproducible adapter with a signed hash ships.",
+  "adapterAbi": {
+    "header": "unified-android/native/include/lucent_native_adapter.h",
+    "abiVersion": 1,
+    "entrySymbol": "lucent_native_adapter_entry",
+    "expectedLibraryName": "liblucent_native_adapter_cemu.so",
+    "renderKind": "LUCENT_NATIVE_RENDER_VULKAN_WINDOW"
+  },
+  "core": {
+    "repository": "https://github.com/cemu-project/Cemu",
+    "commit": "daacdda0bab55dd78a2b5aac2c12d6ebe8c8e868",
+    "archive": "https://codeload.github.com/cemu-project/Cemu/tar.gz/daacdda0bab55dd78a2b5aac2c12d6ebe8c8e868",
+    "archiveSha256": "6e29804a6a7900ec35a4197b91044e0ae752ad44af3437656a86afcd176b397b"
+  },
+  "toolchain": {
+    "androidAbi": "arm64-v8a",
+    "androidApi": 24,
+    "ndkVersion": "27.0.12077973",
+    "cmakeVersion": "3.31.6",
+    "note": "Pinned to match Lucent's other in-process engines; the exact NDK/CMake/Ninja artifact hashes will be recorded here once the reproducible adapter build is implemented."
+  },
+  "cmakeOptions": {
+    "ENABLE_VULKAN": true,
+    "ENABLE_OPENGL": false,
+    "ENABLE_WXWIDGETS": false,
+    "ENABLE_CUBEB": false,
+    "androidMaxPageSize": 16384,
+    "note": "Cemu is a standalone Vulkan emulator. The adapter target builds Cemu's core without its own Activity/UI and exports only lucent_native_adapter_entry; Lucent owns the surfaces, audio, input, and saves."
+  },
+  "patches": [],
+  "dependencies": [
+    {
+      "note": "Dependency closure stub. Cemu vendors its third-party libraries as git submodules (e.g. dependencies/, Externals/). Each submodule's repository/commit/archiveSha256 must be pinned here (mirroring engines/dolphin-source-lock.json) before the adapter build can claim a reproducible closure. Left empty deliberately: no dependency has been audited or pinned yet."
+    }
+  ]
+}

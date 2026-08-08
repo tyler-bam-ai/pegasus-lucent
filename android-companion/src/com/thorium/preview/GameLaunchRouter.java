@@ -4,6 +4,7 @@ import android.content.Context;
 
 import com.thorium.preview.game.InWindowGameHost;
 import com.thorium.preview.game.InternalEngineCatalog;
+import com.thorium.preview.game.NativeAdapterCatalog;
 import com.thorium.preview.game.Phase2QualificationCatalog;
 import com.thorium.lucent.metadata.EngineSystemIdResolver;
 import com.thorium.lucent.metadata.MetadataGameLaunchCommand;
@@ -37,6 +38,12 @@ public final class GameLaunchRouter {
         InternalEngineCatalog.Entry release =
                 InternalEngineCatalog.availableForSystem(context, normalized);
         if (release != null) return release.id;
-        return Phase2QualificationCatalog.libraryEngineIdForSystem(context, normalized);
+        String phase2 =
+                Phase2QualificationCatalog.libraryEngineIdForSystem(context, normalized);
+        if (!phase2.isEmpty()) return phase2;
+        // Phase 3 native-adapter engines (Wii U/Cemu) resolve INTERNAL only when
+        // the adapter .so is bundled and hash-verified. Until then the catalog is
+        // empty, so a system like Wii U falls through to its external Cemu route.
+        return NativeAdapterCatalog.libraryEngineIdForSystem(context, normalized);
     }
 }
