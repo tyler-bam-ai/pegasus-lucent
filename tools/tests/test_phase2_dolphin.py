@@ -166,8 +166,13 @@ class DolphinCompilerProofTests(unittest.TestCase):
         mapping = LIBRETRO_INPUT.read_text(encoding="utf-8")
         phase2_session = PHASE2_SESSION.read_text(encoding="utf-8")
         harness = ACTIVITY_QA.read_text(encoding="utf-8")
-        self.assertIn('case SOUTH: return dolphin ? 8 : 0;', mapping)
-        self.assertIn('case EAST: return dolphin ? 0 : 8;', mapping)
+        # Dolphin (GameCube/Wii) keeps A at the south position. The runtime
+        # expresses this via southIsA, which is true for dolphin (and the
+        # Nintendo handheld face group); GameCube/Wii still use the console
+        # kidney layout for west/north.
+        self.assertIn('boolean southIsA = dolphin || nintendoFace;', mapping)
+        self.assertIn('case SOUTH: return southIsA ? 8 : 0;', mapping)
+        self.assertIn('case EAST: return southIsA ? 0 : 8;', mapping)
         self.assertIn('case L1: return gameCube ? -1 : 10;', mapping)
         self.assertIn('case L2: return 12;', mapping)
         self.assertIn('case R2: return 13;', mapping)

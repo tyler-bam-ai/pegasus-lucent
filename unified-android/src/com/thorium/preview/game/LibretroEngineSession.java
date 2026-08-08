@@ -977,10 +977,15 @@ public final class LibretroEngineSession implements EngineSession,
             canvas.drawColor(android.graphics.Color.BLACK);
             int width = requestedWidth > 0 ? requestedWidth : canvas.getWidth();
             int height = requestedHeight > 0 ? requestedHeight : canvas.getHeight();
+            // Fill as much of the surface as possible without stretching:
+            // scale by the exact aspect-correct fit factor (fractional), so the
+            // image touches the screen edges in one dimension and letterboxes
+            // the other. (Previously upscaling was floored to an integer, which
+            // left large unused borders on high-resolution displays.)
             float fit = Math.min((float) width / source.width(),
                     (float) height / source.height());
-            boolean integerScale = fit >= 1f;
-            float scale = integerScale ? Math.max(1f, (float)Math.floor(fit)) : fit;
+            float scale = fit > 0f ? fit : 1f;
+            boolean integerScale = scale == Math.floor(scale);
             float drawWidth = source.width() * scale;
             float drawHeight = source.height() * scale;
             RectF destination = new RectF((width - drawWidth) / 2f,

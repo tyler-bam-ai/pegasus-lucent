@@ -17,19 +17,33 @@ public final class SystemControlLayouts {
 
     private static Map<String, Map<CanonicalControl, String>> build() {
         Map<String, Map<CanonicalControl, String>> layouts = new HashMap<>();
+        // Nintendo two-button systems match the Thor's Xbox-style physical
+        // labels: the bottom (SOUTH=BUTTON_A) button is "A", the right
+        // (EAST=BUTTON_B) is "B". (An earlier mapping used the Nintendo hardware
+        // layout, swapping A/B against the device's printed labels — see
+        // LibretroJoypadLayout.isNintendoFace for the matching runtime scope.)
+        Map<CanonicalControl, String> nintendoTwoButton = base();
+        nintendoTwoButton.put(CanonicalControl.SOUTH, "A");
+        nintendoTwoButton.put(CanonicalControl.EAST, "B");
+        nintendoTwoButton.put(CanonicalControl.START, "START");
+        nintendoTwoButton.put(CanonicalControl.SELECT, "SELECT");
+        add(layouts, nintendoTwoButton, "nes", "famicom", "gb", "gbc", "gameboy",
+                "gameboycolor", "virtualboy");
+
+        // Non-Nintendo two-button systems keep the generic RetroPad convention
+        // (south=B), matching their libretro cores.
         Map<CanonicalControl, String> twoButton = base();
         twoButton.put(CanonicalControl.SOUTH, "B");
         twoButton.put(CanonicalControl.EAST, "A");
         twoButton.put(CanonicalControl.START, "START");
         twoButton.put(CanonicalControl.SELECT, "SELECT");
-        add(layouts, twoButton, "nes", "famicom", "gb", "gbc", "gameboy", "gameboycolor",
-                "atari2600", "atari5200", "atari7800", "colecovision", "intellivision",
-                "odyssey2", "pcengine", "turbografx16", "virtualboy", "wonderswan",
+        add(layouts, twoButton, "atari2600", "atari5200", "atari7800", "colecovision",
+                "intellivision", "odyssey2", "pcengine", "turbografx16", "wonderswan",
                 "wonderswancolor", "neogeopocket", "neogeopocketcolor");
 
         Map<CanonicalControl, String> snes = base();
-        snes.put(CanonicalControl.SOUTH, "B"); snes.put(CanonicalControl.EAST, "A");
-        snes.put(CanonicalControl.WEST, "Y"); snes.put(CanonicalControl.NORTH, "X");
+        snes.put(CanonicalControl.SOUTH, "A"); snes.put(CanonicalControl.EAST, "B");
+        snes.put(CanonicalControl.WEST, "X"); snes.put(CanonicalControl.NORTH, "Y");
         snes.put(CanonicalControl.L1, "L"); snes.put(CanonicalControl.R1, "R");
         snes.put(CanonicalControl.START, "START"); snes.put(CanonicalControl.SELECT, "SELECT");
         add(layouts, snes, "snes", "superfamicom", "gba", "gameboyadvance");

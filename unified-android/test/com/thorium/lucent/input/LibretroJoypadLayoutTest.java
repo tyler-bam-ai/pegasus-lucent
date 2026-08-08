@@ -24,10 +24,14 @@ public final class LibretroJoypadLayoutTest {
                 "Wii primary south is A");
         TestSupport.equal(0, LibretroJoypadLayout.idFor("wii", CanonicalControl.EAST),
                 "Wii secondary east is B");
-        TestSupport.equal(0, LibretroJoypadLayout.idFor("snes", CanonicalControl.SOUTH),
-                "ordinary RetroPad south remains B");
-        TestSupport.equal(8, LibretroJoypadLayout.idFor("snes", CanonicalControl.EAST),
-                "ordinary RetroPad east remains A");
+        TestSupport.equal(8, LibretroJoypadLayout.idFor("snes", CanonicalControl.SOUTH),
+                "RetroPad south is A, matching the device's bottom button label");
+        TestSupport.equal(0, LibretroJoypadLayout.idFor("snes", CanonicalControl.EAST),
+                "RetroPad east is B, matching the device's right button label");
+        TestSupport.equal(9, LibretroJoypadLayout.idFor("snes", CanonicalControl.WEST),
+                "RetroPad west is X, matching the device's left button label");
+        TestSupport.equal(1, LibretroJoypadLayout.idFor("snes", CanonicalControl.NORTH),
+                "RetroPad north is Y, matching the device's top button label");
         TestSupport.equal("A", SystemControlLayouts.forSystem("gamecube")
                         .get(CanonicalControl.SOUTH),
                 "GameCube remap label matches runtime A mapping");

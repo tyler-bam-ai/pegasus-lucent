@@ -355,6 +355,12 @@ public final class InWindowGameHost
         root.setBackgroundColor(Color.BLACK);
         root.setFocusable(true);
         root.setFocusableInTouchMode(true);
+        // Gameplay owns every touch that is not handled by an on-screen control
+        // child (the phone/tablet fallback). Consuming here stops a stray tap
+        // from reaching Qt's Activity-level touch dispatch behind the game,
+        // which was navigating the library ("tapping skips to a new game").
+        root.setClickable(true);
+        root.setOnTouchListener((view, event) -> true);
         gameSurface = new GameSurface(activity);
         root.addView(gameSurface, match());
         touchControls = new TouchControlsView(activity);
