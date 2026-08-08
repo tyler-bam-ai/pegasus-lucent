@@ -35,20 +35,25 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Drives a Phase 3 native-adapter engine (Wii U/Cemu first) in-process.
+ * Drives a Phase 3 native-adapter engine in-process. Two are described by the
+ * Phase 3 registry: Switch/Eden (the one with a staged adapter today) and
+ * Wii U/Cemu (still unbuilt).
  *
  * It reuses the render-owner discipline proven by {@link PpssppGlesEngineSession}:
  * one dedicated thread owns every adapter call, the surface is quiesced before
  * detach, input maps to the {@code lucent_native_control} ordinals, and audio is
  * pulled into a Lucent-owned {@link AudioTrack}. Capabilities are reported
- * honestly: the initial Wii U adapter has {@code has_quick_resume=false}, so
- * held-Stop flushes normal saves and completes WITHOUT ever claiming a Quick
- * Resume, and {@code onRestoreAvailabilityChanged(false)} is emitted. If the
- * adapter {@code .so} is absent the session fails closed.
+ * honestly: both adapters report {@code has_quick_resume=false}, so held-Stop
+ * flushes normal saves and completes WITHOUT ever claiming a Quick Resume, and
+ * {@code onRestoreAvailabilityChanged(false)} is emitted. If the adapter
+ * {@code .so} is absent the session fails closed, and so does an adapter whose
+ * user-supplied keys/firmware are missing (see
+ * {@link NativeAdapterSystemDirectory}).
  *
  * Dual screen: the Wii U TV output uses display 0 (the primary surface) and the
  * GamePad view uses display 4 via {@link SecondaryGameplaySurfaceRouter}, the
- * same path DS/3DS use.
+ * same path DS/3DS use. Switch is single-screen and Eden reports
+ * {@code dual_screen=false}, so it never requests the secondary display.
  */
 final class NativeAdapterEngineSession implements EngineSession,
         SecondaryGameplaySurfaceRouter.Listener {
@@ -119,10 +124,6 @@ final class NativeAdapterEngineSession implements EngineSession,
                 // Fail closed: the adapter .so must be present and hash-verified.
                 if (entry.coreFile == null || !entry.coreFile.isFile())
                     throw new IllegalStateException("Native adapter is not installed");
-                File system = new File(appContext.getDir("engine-system",
-                        Context.MODE_PRIVATE), entry.id);
-                if (!system.isDirectory() && !system.mkdirs())
-                    throw new IllegalStateException("Cannot create adapter system directory");
                 saveDirectory = new File(appContext.getFilesDir(),
                         "engine-saves/" + entry.id + "/" + sha256Short(game));
                 if (!saveDirectory.isDirectory() && !saveDirectory.mkdirs())
@@ -131,6 +132,14 @@ final class NativeAdapterEngineSession implements EngineSession,
 
                 NativeAdapterHost created = new NativeAdapterHost(entry.coreFile, trusted);
                 capabilities = created.describe();
+                // The system directory is resolved from the adapter's OWN
+                // capability report, so an engine that declares user-supplied
+                // keys/firmware (Eden reports required_firmware=2) fails closed
+                // here instead of booting into an undecryptable state. Nothing
+                // is ever bundled: user files are copied into the app-private
+                // per-engine root, exactly like LibretroEngineSpec.installSystem.
+                File system = NativeAdapterSystemDirectory.resolve(appContext,
+                        entry.id, request.systemId, capabilities.requiredFirmware);
                 created.create();
                 created.loadContent(system, saveDirectory, game.getPath());
                 host = created;

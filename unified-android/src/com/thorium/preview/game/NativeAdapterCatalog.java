@@ -22,14 +22,18 @@ import java.util.concurrent.TimeUnit;
 /**
  * Fail-closed reader for explicitly packaged Phase 3 native-adapter engines.
  *
- * A native-adapter engine (Wii U/Cemu is the first) is only routable internally
- * when ALL of the following hold: a signed phase3 opt-in names the engine, the
- * pinned {@code phase3-engine-registry.json} row for it declares
+ * A native-adapter engine is only routable internally when ALL of the following
+ * hold: a signed phase3 opt-in names the engine, the pinned
+ * {@code phase3-engine-registry.json} row for it declares
  * {@code route: native-adapter} at the opted commit, a phase3 artifact manifest
  * records the adapter's SHA-256, and the adapter {@code .so} is physically
- * bundled in the APK with a matching hash. None of those assets ship today, so
- * the catalog is empty and Wii U resolves to its external Cemu route — the real
- * in-process core is a separate multi-week milestone.
+ * bundled in the APK with a matching hash.
+ *
+ * A default/release APK packages none of those assets, so the catalog is empty
+ * and every Phase 3 system stays on its external route. Only a qualification
+ * build that explicitly opted in (Switch/Eden via
+ * {@code LUCENT_INCLUDE_PHASE3_EDEN=1}) has them; Wii U/Cemu has no adapter
+ * built at all and therefore still resolves to its external Cemu route.
  */
 public final class NativeAdapterCatalog {
     private static final String TAG = "LucentPhase3Catalog";

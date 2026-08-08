@@ -20,6 +20,7 @@ VERSION_CODE=89
 # gates. Refuse the build outright when a caller sets an unprefixed name.
 for stray_flag in INCLUDE_EXPERIMENTAL_CORES AUTOSELECT_EXPERIMENTAL_CORES \
         REUSE_QUALIFICATION_CORES INCLUDE_PHASE2_PPSSPP REUSE_PHASE2_PPSSPP \
+        INCLUDE_PHASE3_EDEN \
         KEYSTORE STORE_PASS KEY_PASS KEY_ALIAS; do
     if eval "[ \"\${$stray_flag+set}\" = set ]"; then
         printf 'Refusing to build: %s is set but this build only reads LUCENT_%s\n' \
@@ -37,8 +38,9 @@ for lucent_flag in $(env | LC_ALL=C sed -n 's/^\(LUCENT_[A-Za-z0-9_]*\)=.*/\1/p'
         LUCENT_REUSE_QUALIFICATION_CORES) ;;
         LUCENT_INCLUDE_PHASE2_PPSSPP) ;;
         LUCENT_REUSE_PHASE2_PPSSPP) ;;
+        LUCENT_INCLUDE_PHASE3_EDEN) ;;
         LUCENT_INCLUDE_*|LUCENT_REUSE_*|LUCENT_AUTOSELECT_*)
-            printf 'Refusing to build: unknown build flag %s (known flags: LUCENT_INCLUDE_EXPERIMENTAL_CORES LUCENT_AUTOSELECT_EXPERIMENTAL_CORES LUCENT_REUSE_QUALIFICATION_CORES LUCENT_INCLUDE_PHASE2_PPSSPP LUCENT_REUSE_PHASE2_PPSSPP)\n' \
+            printf 'Refusing to build: unknown build flag %s (known flags: LUCENT_INCLUDE_EXPERIMENTAL_CORES LUCENT_AUTOSELECT_EXPERIMENTAL_CORES LUCENT_REUSE_QUALIFICATION_CORES LUCENT_INCLUDE_PHASE2_PPSSPP LUCENT_REUSE_PHASE2_PPSSPP LUCENT_INCLUDE_PHASE3_EDEN)\n' \
                 "$lucent_flag" >&2
             exit 1
             ;;
@@ -51,6 +53,11 @@ AUTOSELECT_EXPERIMENTAL_CORES=${LUCENT_AUTOSELECT_EXPERIMENTAL_CORES:-0}
 REUSE_QUALIFICATION_CORES=${LUCENT_REUSE_QUALIFICATION_CORES:-0}
 INCLUDE_PHASE2_PPSSPP=${LUCENT_INCLUDE_PHASE2_PPSSPP:-0}
 REUSE_PHASE2_PPSSPP=${LUCENT_REUSE_PHASE2_PPSSPP:-0}
+# Phase 3 packages an already-built in-process native adapter; this build never
+# compiles one. There is no LUCENT_REUSE_ flag because there is nothing to
+# rebuild: the staged artifact is the only input and its hash is the gate.
+INCLUDE_PHASE3_EDEN=${LUCENT_INCLUDE_PHASE3_EDEN:-0}
+PHASE3_EDEN_ADAPTER="$ROOT_DIR/engines/build/arm64-v8a/liblucent_native_adapter_eden.so"
 DEPS_DIR="$BUILD_DIR/deps"
 COMMONS_COMPRESS_JAR="$DEPS_DIR/commons-compress-1.21.jar"
 XZ_JAR="$DEPS_DIR/xz-1.9.jar"
@@ -90,6 +97,19 @@ case "$INCLUDE_PHASE2_PPSSPP:$REUSE_PHASE2_PPSSPP" in
 esac
 if [ "$REUSE_PHASE2_PPSSPP" = 1 ] && [ "$INCLUDE_PHASE2_PPSSPP" != 1 ]; then
     printf 'Reusing Phase 2 PPSSPP requires LUCENT_INCLUDE_PHASE2_PPSSPP=1\n' >&2
+    exit 1
+fi
+
+case "$INCLUDE_PHASE3_EDEN" in
+    0|1) ;;
+    *) printf 'LUCENT_INCLUDE_PHASE3_EDEN must be 0 or 1\n' >&2; exit 1 ;;
+esac
+if [ "$INCLUDE_PHASE3_EDEN" = 1 ] && [ ! -f "$PHASE3_EDEN_ADAPTER" ]; then
+    # Fail closed before any APK work: an opted-in Phase 3 build that silently
+    # produced an APK without the adapter would look qualified and route Switch
+    # externally with no signal at all.
+    printf 'LUCENT_INCLUDE_PHASE3_EDEN=1 requires the staged adapter: %s\n' \
+        "$PHASE3_EDEN_ADAPTER" >&2
     exit 1
 fi
 
@@ -282,6 +302,7 @@ cp "$BUILD_DIR/native/arm64-v8a/liblucent_vulkan_host.so" \
 # a zero-core (or partially staged) APK can never pass the manifest gate.
 PHASE1_STAGED_CORE_COUNT=0
 PHASE2_STAGED_CORE_COUNT=0
+PHASE3_STAGED_ADAPTER_COUNT=0
 if [ "$INCLUDE_EXPERIMENTAL_CORES" = 1 ]; then
     for qualification_core in mesen mesen-s sameboy mgba gearsystem swanstation melonds-ds fuse mame dosbox-pure prosystem beetle-pce-fast beetle-neopop beetle-cygne blastem mupen64plus-next; do
         normalized_core=$(printf '%s' "$qualification_core" | tr '-' '_')
@@ -414,6 +435,28 @@ python3 "$PROJECT_DIR/tools/generate_engine_artifact_manifest.py" \
     --library-dir "$DECODED/lib/arm64-v8a" \
     --expected-count "$PHASE1_STAGED_CORE_COUNT" \
     --output "$DECODED/assets/engine-artifacts.json"
+if [ "$INCLUDE_PHASE3_EDEN" = 1 ]; then
+    # Phase 3 stages an ALREADY-BUILT in-process native adapter; this build
+    # never compiles one. The .so is not a libretro core, so it is staged under
+    # the exact name NativeAdapterCatalog reconstructs from the engine id and is
+    # hashed into its own manifest. The catalog then re-verifies that hash on
+    # device, so a swapped or truncated adapter fails closed at runtime too.
+    cp "$PHASE3_EDEN_ADAPTER" \
+        "$DECODED/lib/arm64-v8a/liblucent_native_adapter_eden.so"
+    PHASE3_STAGED_ADAPTER_COUNT=$((PHASE3_STAGED_ADAPTER_COUNT + 1))
+    cp "$ROOT_DIR/engines/phase3-qualification-opt-in.json" \
+        "$DECODED/assets/phase3-qualification-opt-in.json"
+    cp "$ROOT_DIR/engines/eden-source-lock.json" \
+        "$DECODED/assets/phase3-eden-source-lock.json"
+    cp "$ROOT_DIR/engines/patches/eden-lucent-adapter.cpp" \
+        "$DECODED/assets/phase3-eden-lucent-adapter.cpp"
+    python3 "$PROJECT_DIR/tools/generate_engine_artifact_manifest.py" \
+        --registry "$ROOT_DIR/engines/phase3-registry.json" \
+        --library-dir "$DECODED/lib/arm64-v8a" \
+        --artifact-kind native-adapter \
+        --expected-count "$PHASE3_STAGED_ADAPTER_COUNT" \
+        --output "$DECODED/assets/phase3-engine-artifacts.json"
+fi
 
 # Compile all Java services together. The QtApplication stub is compile-only;
 # the real superclass remains in Pegasus's primary classes.dex.
@@ -448,8 +491,12 @@ cp "$BUILD_DIR/dex/classes.dex" "$BUILD_DIR/work/classes2.dex"
 (cd "$BUILD_DIR/work" && "$BUILD_TOOLS/aapt" add "$UNSIGNED" classes2.dex >/dev/null)
 
 ALIGNED="$BUILD_DIR/lucent-unified-aligned.apk"
-if [ "$INCLUDE_PHASE2_PPSSPP" = 1 ]; then
+if [ "$INCLUDE_PHASE2_PPSSPP" = 1 ] && [ "$INCLUDE_PHASE3_EDEN" = 1 ]; then
+    OUTPUT="$BUILD_DIR/lucent-$VERSION_NAME-phase2-phase3-qualification.apk"
+elif [ "$INCLUDE_PHASE2_PPSSPP" = 1 ]; then
     OUTPUT="$BUILD_DIR/lucent-$VERSION_NAME-phase2-qualification.apk"
+elif [ "$INCLUDE_PHASE3_EDEN" = 1 ]; then
+    OUTPUT="$BUILD_DIR/lucent-$VERSION_NAME-phase3-qualification.apk"
 else
     OUTPUT="$BUILD_DIR/lucent-$VERSION_NAME.apk"
 fi
@@ -578,13 +625,20 @@ fi
 if [ "$INCLUDE_PHASE2_PPSSPP" = 1 ]; then
     python3 "$PROJECT_DIR/tools/verify_phase2_apk.py" "$OUTPUT" >/dev/null
 fi
+if [ "$INCLUDE_PHASE3_EDEN" = 1 ]; then
+    python3 "$PROJECT_DIR/tools/verify_phase3_apk.py" "$OUTPUT" >/dev/null
+fi
 # A mutable convenience filename is useful for local installs, but QA evidence
 # must never point at a path that a later build can overwrite.  Emit a
 # content-addressed copy as the authoritative artifact.
 OUTPUT_SHA=$(shasum -a 256 "$OUTPUT" | awk '{print $1}')
 case "$OUTPUT" in
+    *-phase2-phase3-qualification.apk)
+        IMMUTABLE_OUTPUT="$BUILD_DIR/lucent-$VERSION_NAME-phase2-phase3-qualification-$OUTPUT_SHA.apk" ;;
     *-phase2-qualification.apk)
         IMMUTABLE_OUTPUT="$BUILD_DIR/lucent-$VERSION_NAME-phase2-qualification-$OUTPUT_SHA.apk" ;;
+    *-phase3-qualification.apk)
+        IMMUTABLE_OUTPUT="$BUILD_DIR/lucent-$VERSION_NAME-phase3-qualification-$OUTPUT_SHA.apk" ;;
     *)  IMMUTABLE_OUTPUT="$BUILD_DIR/lucent-$VERSION_NAME-$OUTPUT_SHA.apk" ;;
 esac
 if [ -f "$IMMUTABLE_OUTPUT" ]; then

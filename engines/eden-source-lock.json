@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "engineId": "eden",
+  "systems": ["switch"],
+  "route": "native-adapter",
+  "buildProfile": "android-arm64-native-adapter-vulkan",
+  "closureScope": "staged-source-and-CPM-fetched-dependency-closure-for-this-build-profile",
+  "reproducible": false,
+  "reproducibleNote": "Exactly ONE build of this tree exists. No second, independent, byte-identical build has been attempted, so no reproducibility claim is made and no independentBuilds proof is recorded. The dependency closure below is also incomplete: the configure line enables YUZU_USE_CPM=ON with CPMUTIL_FORCE_BUNDLED=ON, so CPM fetched third-party sources at configure time that are NOT individually pinned here. Every gate in engines/phase3-registry.json stays false and shipped stays false. Packaging is opt-in only (LUCENT_INCLUDE_PHASE3_EDEN=1) and the Java NativeAdapterCatalog still requires the artifact sha256 below to match byte-for-byte before Switch resolves INTERNAL.",
+  "adapterAbi": {
+    "header": "unified-android/native/include/lucent_native_adapter.h",
+    "abiVersion": 1,
+    "entrySymbol": "lucent_native_adapter_entry",
+    "expectedLibraryName": "liblucent_native_adapter_eden.so",
+    "renderKind": "LUCENT_NATIVE_RENDER_VULKAN_WINDOW"
+  },
+  "core": {
+    "repository": "https://git.eden-emu.dev/eden-emu/eden",
+    "commit": "c0ffc900cdf19b9373549c59a7e6b22c33615ea4",
+    "tag": "v0.2.0",
+    "note": "Cloned by commit from the upstream Gitea instance. No release tarball URL or archiveSha256 is recorded because none was downloaded; claiming an archive hash without fetching one would be false provenance."
+  },
+  "toolchain": {
+    "androidAbi": "arm64-v8a",
+    "androidApi": 30,
+    "ndkVersion": "28.2.13676358",
+    "cmakeVersion": "3.31.6",
+    "ninjaVersion": "1.12.1",
+    "glslangValidator": {
+      "source": "homebrew",
+      "formula": "glslang",
+      "version": "16.5.0"
+    },
+    "buildType": "Release",
+    "note": "Recorded from the environment that produced the artifact below. Toolchain archive hashes are NOT pinned, which is one reason reproducible stays false."
+  },
+  "cmakeOptions": {
+    "ANDROID_ABI": "arm64-v8a",
+    "ANDROID_PLATFORM": "android-30",
+    "CMAKE_BUILD_TYPE": "Release",
+    "ENABLE_QT": 0,
+    "ENABLE_WEB_SERVICE": 1,
+    "ANDROID_ARM_NEON": true,
+    "YUZU_USE_CPM": "ON",
+    "CPMUTIL_FORCE_BUNDLED": "ON",
+    "YUZU_USE_BUNDLED_FFMPEG": "ON",
+    "BUILD_TESTING": "OFF",
+    "YUZU_TESTS": "OFF",
+    "DYNARMIC_TESTS": "OFF",
+    "note": "Eden is a standalone Switch emulator with its own Android Activity. This profile builds its native library with the adapter translation unit compiled in and no Eden UI in Lucent's process; Lucent owns the surface, audio sink, pause/resume, save flushing, and teardown ordering."
+  },
+  "patches": [
+    {
+      "path": "engines/patches/eden-lucent-adapter.cpp",
+      "sha256": "c59527b906b15d8d7df405ff39e04dafd98aa8f2a0e4cd2771988ae8640f2b93",
+      "role": "adapter-translation-unit",
+      "note": "Compiled INTO Eden's own native library. Implements the lucent_native_adapter vtable and exports lucent_native_adapter_entry plus the lucent_eden_average_game_fps measurement hook."
+    }
+  ],
+  "artifact": {
+    "fileName": "liblucent_native_adapter_eden.so",
+    "stagedPath": "engines/build/arm64-v8a/liblucent_native_adapter_eden.so",
+    "sha256": "5657cc3c349e40d2bf432928b9b8bc6d18b7b502093bfe2197a64db02ec917da",
+    "sizeBytes": 35706832,
+    "elfMachine": "AARCH64",
+    "ptLoadAlignment": "0x4000",
+    "stripped": true,
+    "soname": "libyuzu-android.so",
+    "requiredExports": [
+      "lucent_native_adapter_entry",
+      "lucent_eden_average_game_fps"
+    ],
+    "exportsOnlyTheAdapterEntry": false,
+    "definedDynamicSymbolCount": 52782,
+    "note": "MEASURED, not asserted. Both required exports are present and the PT_LOAD segments are 16 KiB aligned, but the library is NOT reduced to the adapter entry: it is Eden's whole native library (SONAME libyuzu-android.so) with the adapter compiled in, so it still exports Eden's, OpenSSL's, and FFmpeg's symbol tables. Lucent dlopens it by absolute path from the app-private native library directory, so the SONAME/filename difference does not affect loading, but -fvisibility=hidden plus --exclude-libs,ALL has NOT been applied and this artifact does not meet the one-exported-symbol goal recorded in engines/build_native_adapter.sh."
+  },
+  "runtimeInputs": {
+    "keysAndFirmwareBundled": false,
+    "note": "adapter_load() fails closed unless Lucent hands it a validated system directory (Common::FS::SetAppDirectory). Console keys and the system firmware archive are user-supplied at runtime and are NEVER packaged in the APK; see NativeAdapterSystemDirectory."
+  },
+  "dependencies": [
+    {
+      "note": "Dependency closure stub. The build configured with YUZU_USE_CPM=ON and CPMUTIL_FORCE_BUNDLED=ON, so CPM fetched Eden's third-party sources at configure time. Each fetched package's repository/commit/archiveSha256 must be pinned here (mirroring engines/dolphin-source-lock.json) before this lock can claim a reproducible closure. Left populated with this note deliberately: no dependency has been audited or pinned yet."
+    }
+  ]
+}

@@ -41,9 +41,11 @@ public final class GameLaunchRouter {
         String phase2 =
                 Phase2QualificationCatalog.libraryEngineIdForSystem(context, normalized);
         if (!phase2.isEmpty()) return phase2;
-        // Phase 3 native-adapter engines (Wii U/Cemu) resolve INTERNAL only when
-        // the adapter .so is bundled and hash-verified. Until then the catalog is
-        // empty, so a system like Wii U falls through to its external Cemu route.
+        // Phase 3 native-adapter engines resolve INTERNAL only when the adapter
+        // .so is bundled and hash-verified. Switch does so in an opted-in
+        // qualification build (Eden); without that adapter the catalog is empty
+        // and Switch falls through to its external Eden route, exactly as Wii U
+        // still falls through to external Cemu.
         return NativeAdapterCatalog.libraryEngineIdForSystem(context, normalized);
     }
 }

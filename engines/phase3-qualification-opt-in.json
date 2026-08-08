@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "qualificationOnly": true,
+  "autoSelect": false,
+  "note": "Phase 3 native-adapter opt-in. This asset is packaged ONLY by an explicit LUCENT_INCLUDE_PHASE3_EDEN=1 build; a default/release APK has no phase3-qualification-opt-in.json asset at all, and NativeAdapterCatalog returns an empty catalog when it is absent, so every Phase 3 system keeps its external route. Listing an engine here is necessary but not sufficient: the pinned phase3 registry row must still declare route=native-adapter at this exact commit with shipped=false, the phase3 artifact manifest must record the adapter's SHA-256, and the adapter .so must be physically bundled and hash to that value.",
+  "engines": [
+    {
+      "id": "eden",
+      "commit": "c0ffc900cdf19b9373549c59a7e6b22c33615ea4",
+      "libraryName": "liblucent_native_adapter_eden.so",
+      "runtime": "native-adapter",
+      "libraryRouteSystems": ["switch"],
+      "sourceLock": "engines/eden-source-lock.json",
+      "userSuppliedRuntimeInputs": {
+        "keys": "required",
+        "firmware": "required",
+        "bundledInApk": false,
+        "note": "Console keys and the system firmware archive are user-supplied at runtime and are NEVER packaged. NativeAdapterSystemDirectory resolves them from external storage into the app-private engine-system/eden root and fails closed when they are missing."
+      }
+    }
+  ]
+}

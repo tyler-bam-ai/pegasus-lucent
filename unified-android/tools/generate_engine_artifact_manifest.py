@@ -20,12 +20,22 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def generate(registry_path: Path, library_dir: Path) -> dict:
+def generate(registry_path: Path, library_dir: Path,
+             artifact_kind: str = "core") -> dict:
     registry = json.loads(registry_path.read_text(encoding="utf-8"))
     by_filename: dict[str, dict] = {}
     for row in registry.get("engines", []):
         engine_id = row.get("id", "")
         normalized = engine_id.replace("-", "_")
+        if artifact_kind == "native-adapter":
+            # Phase 3 adapters are in-process engines, not libretro cores. Only
+            # a registry row that actually declares the native-adapter route may
+            # contribute an artifact, and it may only claim the one file name
+            # NativeAdapterCatalog reconstructs from the engine id.
+            if row.get("route") != "native-adapter":
+                continue
+            by_filename[f"liblucent_native_adapter_{normalized}.so"] = row
+            continue
         for filename in (
             f"liblucent_core_{normalized}.so",
             f"{engine_id}_libretro.so",
@@ -75,13 +85,18 @@ def main() -> int:
     parser.add_argument("--library-dir", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument(
+        "--artifact-kind", choices=("core", "native-adapter"), default="core",
+        help="'core' hashes bundled libretro cores (Phase 1/2); "
+             "'native-adapter' hashes bundled Phase 3 in-process adapters",
+    )
+    parser.add_argument(
         "--expected-count", type=int, default=None, metavar="N",
         help="fail unless exactly N registered core artifacts are found; a "
              "build that stages cores must never emit an empty (or partial) "
              "manifest silently",
     )
     args = parser.parse_args()
-    manifest = generate(args.registry, args.library_dir)
+    manifest = generate(args.registry, args.library_dir, args.artifact_kind)
     actual = len(manifest["artifacts"])
     if args.expected_count is not None and actual != args.expected_count:
         found = ", ".join(

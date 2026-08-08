@@ -50,9 +50,9 @@ fi
 
 # Confirm the pinned identity and ABI contract are present so a future
 # implementation starts from a validated, fail-closed baseline.
-python3 - "$LOCK" "$ROOT/unified-android/native/include/lucent_native_adapter.h" <<'PY'
+python3 - "$ENGINE" "$LOCK" "$ROOT/unified-android/native/include/lucent_native_adapter.h" <<'PY'
 import json, re, sys
-lock_path, header_path = sys.argv[1], sys.argv[2]
+engine, lock_path, header_path = sys.argv[1], sys.argv[2], sys.argv[3]
 lock = json.load(open(lock_path))
 errors = []
 if lock.get("route") != "native-adapter":
@@ -63,8 +63,14 @@ core = lock.get("core") or {}
 if not str(core.get("repository", "")).startswith("https://") or \
         not re.fullmatch(r"[0-9a-f]{40}", str(core.get("commit", ""))):
     errors.append("core repository/commit identity is incomplete")
-if not re.fullmatch(r"[0-9a-f]{64}", str(core.get("archiveSha256", ""))):
-    errors.append("core archiveSha256 is missing")
+# archive/archiveSha256 are an optional PAIR, exactly as the phase 3 registry
+# validator treats them: a source cloned by commit has no release tarball, and
+# inventing an archive hash for one that was never downloaded is false
+# provenance. Declaring an archive without its hash stays an error.
+archive, archive_hash = core.get("archive"), core.get("archiveSha256")
+if bool(archive) != bool(archive_hash) or (archive_hash and
+        not re.fullmatch(r"[0-9a-f]{64}", str(archive_hash))):
+    errors.append("core archive identity is incomplete")
 abi = lock.get("adapterAbi") or {}
 if abi.get("entrySymbol") != "lucent_native_adapter_entry":
     errors.append("adapter entry symbol must be lucent_native_adapter_entry")
@@ -73,12 +79,14 @@ if "#define LUCENT_NATIVE_ADAPTER_ABI_VERSION" not in header:
     errors.append("ABI header does not define LUCENT_NATIVE_ADAPTER_ABI_VERSION")
 if errors:
     print("\n".join("  - " + e for e in errors)); sys.exit(1)
-print("cemu native-adapter source lock and ABI contract validated")
+print(f"{engine} native-adapter source lock and ABI contract validated")
 PY
 
 printf '\n'
 printf 'engine=%s abi=%s lock=%s\n' "$ENGINE" "$ABI" "$LOCK"
-printf 'Native-adapter core build not yet implemented.\n' >&2
-printf 'This recipe is a documented skeleton; the multi-week Cemu-as-adapter\n' >&2
-printf 'build has not been built. No adapter .so was produced.\n' >&2
+printf 'Native-adapter core build not yet implemented for %s.\n' "$ENGINE" >&2
+printf 'This recipe is a documented skeleton; no adapter .so was produced.\n' >&2
+printf 'The Eden/Switch adapter that IS staged in engines/build/arm64-v8a was\n' >&2
+printf 'built out of band and is NOT reproduced by this script: see\n' >&2
+printf 'engines/eden-source-lock.json, which records reproducible=false.\n' >&2
 exit 3

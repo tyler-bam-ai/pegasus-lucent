@@ -62,10 +62,11 @@ public final class InternalEngineBootstrap {
         }
         for (final NativeAdapterCatalog.Entry entry :
                 NativeAdapterCatalog.entries(context)) {
-            // Phase 3 native-adapter engines (Wii U/Cemu first) are present only
-            // when the adapter .so is bundled and hash-verified; the catalog is
-            // empty and fail-closed until a real core ships, so this loop is a
-            // no-op today.
+            // Phase 3 native-adapter engines are present only when the adapter
+            // .so is bundled and hash-verified, which a default/release APK
+            // never does. In an opted-in qualification build (Switch/Eden) this
+            // registers the in-process session factory; otherwise the catalog is
+            // empty and the loop is a no-op.
             EngineSessionRegistry.register(entry.id, (sessionContext, request) ->
                     new NativeAdapterEngineSession(sessionContext, entry));
             verified++;
