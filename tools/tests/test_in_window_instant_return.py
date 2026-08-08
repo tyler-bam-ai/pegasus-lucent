@@ -159,6 +159,56 @@ class InWindowInstantReturnTest(unittest.TestCase):
         self.assertIn("if (!approvedPhaseOne && !approvedPhaseTwo)", request)
         self.assertIn("Rejected stale/unpackaged engine route", request)
 
+    def test_every_teardown_route_quiesces_before_surface_detach(self):
+        # The 818adab8 stop race was fixed in exitToLibrary alone; destroyNow
+        # and replaceWith kept the original surface-detach-before-pause
+        # ordering. Every teardown owner must quiesce first, and release()
+        # (which joins engine threads) must stay off the UI thread.
+        destroy = self.method("private void destroyNow()", "private void detachViews()")
+        self.assertIn("ending.quiesceForExit();", destroy)
+        self.assertLess(
+            destroy.index("ending.quiesceForExit();"),
+            destroy.index("detachViews();"),
+        )
+        self.assertNotIn("ending.release();", destroy)
+        self.assertIn("RETIREMENT_RELEASES.execute(ending::release)", destroy)
+        replace = self.method(
+            "private void replaceWith(GameLaunchRequest next)", "private void buildUi()"
+        )
+        self.assertIn("ending.quiesceForExit();", replace)
+        self.assertNotIn("ending.release();", replace)
+        self.assertIn("RETIREMENT_RELEASES.execute(ending::release)", replace)
+
+    def test_tap_select_press_is_latched_across_frame_polls(self):
+        # Cores sample the joypad once per retro_run; a same-timestamp
+        # down/up pair is invisible to them and breaks the tap-vs-hold
+        # contract for the Thor Stop/Select button.
+        stop = self.method("private boolean handleStopButton", "private void showPauseMenu()")
+        self.assertIn("TAP_SELECT_HOLD_MS", stop)
+        self.assertIn("mainHandler.postDelayed", stop)
+        self.assertIn("if (session == target) target.dispatchKeyEvent(up);", stop)
+        self.assertIn("private static final long TAP_SELECT_HOLD_MS", self.source)
+
+    def test_gles_stop_lambda_cannot_strand_a_retiring_session(self):
+        session = GLES_SESSION.read_text(encoding="utf-8")
+        stop = session.split("@Override public void stop(StopReason reason", 1)[1]
+        stop = stop.split("@Override public void release()", 1)[0]
+        # pauseAndWait/loop teardown can throw; the completion must still run
+        # or the session, gameplay root, and Activity leak in RETIRING_SESSIONS.
+        self.assertIn("} catch (Throwable failure) {", stop)
+        catch_block = stop.split("} catch (Throwable failure) {", 1)[1]
+        self.assertIn("completion.complete();", catch_block)
+        self.assertIn("onSessionStopRejected(", stop)
+
+    def test_phase1_exit_save_failure_is_visible_not_swallowed(self):
+        session = (ROOT / "unified-android" / "src" / "com" / "thorium" /
+                   "preview" / "game" / "LibretroEngineSession.java").read_text(encoding="utf-8")
+        save = session.split("private void saveQuickResume(boolean waitForCommit", 1)[1]
+        save = save.split("private void restore(", 1)[0]
+        self.assertNotIn("catch (Throwable ignored)", save)
+        self.assertIn("marker=save-failure", save)
+        self.assertIn("onSessionStopRejected(", save)
+
 
 if __name__ == "__main__":
     unittest.main()

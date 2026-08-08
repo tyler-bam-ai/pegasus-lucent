@@ -48,6 +48,10 @@ public final class InWindowGameHost
     private static final String TAG = "LucentInWindow";
     private static final String AUTHORITY = "com.thorium.preview.roms";
     private static final long STOP_HOLD_MS = 1000L;
+    // About three 60 fps frame periods: long enough that every core's next
+    // input poll observes the synthesized Select press, short enough to feel
+    // like a tap.
+    private static final long TAP_SELECT_HOLD_MS = 48L;
     private static final int COLOR_ACCENT = Color.rgb(151, 119, 255);
     private static final java.util.regex.Pattern QUALIFICATION_SESSION =
             java.util.regex.Pattern.compile("qa-[0-9a-f]{32}");
@@ -296,14 +300,28 @@ public final class InWindowGameHost
         exitStarted.set(true);
         EngineSession ending = session;
         session = null;
-        EngineSession.Completion switchGame = () -> activity.runOnUiThread(() -> {
-            if (ending != null) ending.release();
-            detachViews();
-            synchronized (InWindowGameHost.class) {
-                active = new InWindowGameHost(activity, next, content);
-                active.attach();
+        if (ending != null) {
+            try {
+                // Pause the render owner while the outgoing game's surface is
+                // still valid, exactly as exitToLibrary does; the stop below
+                // then serializes against a quiesced renderer.
+                ending.quiesceForExit();
+            } catch (RuntimeException failure) {
+                Log.w(TAG, "Switch-time render quiescence failed", failure);
             }
-        });
+        }
+        EngineSession.Completion switchGame = () -> {
+            // release() joins engine threads for seconds; keep it off the UI
+            // thread and let the retirement executor own native teardown.
+            if (ending != null) RETIREMENT_RELEASES.execute(ending::release);
+            activity.runOnUiThread(() -> {
+                detachViews();
+                synchronized (InWindowGameHost.class) {
+                    active = new InWindowGameHost(activity, next, content);
+                    active.attach();
+                }
+            });
+        };
         if (ending == null) switchGame.complete();
         else ending.stop(EngineSession.StopReason.EXIT_TO_LUCENT, switchGame);
     }
@@ -489,11 +507,22 @@ public final class InWindowGameHost
             stopPressed = false;
             ++stopGeneration;
             if (!stopHoldTriggered && session != null) {
+                // Cores observe buttons by polling once per retro_run; a
+                // zero-width down/up pair between two polls is invisible.
+                // Latch the synthesized Select press across a few frame
+                // periods so at least one poll sees it.
+                final EngineSession target = session;
+                final KeyEvent up = event;
                 long now = event.getEventTime();
-                session.dispatchKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN,
+                target.dispatchKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN,
                         event.getKeyCode(), 0, event.getMetaState(), event.getDeviceId(),
                         event.getScanCode(), event.getFlags(), event.getSource()));
-                session.dispatchKeyEvent(event);
+                mainHandler.postDelayed(() -> {
+                    // If the session changed meanwhile, drop the release: the
+                    // old session is retiring and a new host starts with a
+                    // clean joypad mask.
+                    if (session == target) target.dispatchKeyEvent(up);
+                }, TAP_SELECT_HOLD_MS);
             }
             stopHoldTriggered = false;
         }
@@ -626,9 +655,20 @@ public final class InWindowGameHost
         EngineSession ending = session;
         session = null;
         if (ending != null) {
-            if (exitStarted.get()) ending.release();
+            try {
+                // Same bounded barrier as exitToLibrary: the render owner must
+                // pause while the game TextureView is still valid, or a queued
+                // swap lands on an abandoned BufferQueue (EGL_BAD_SURFACE
+                // 0x300d) and the final Quick Resume commit can fail.
+                ending.quiesceForExit();
+            } catch (RuntimeException failure) {
+                Log.w(TAG, "Destroy-time render quiescence failed", failure);
+            }
+            // Release joins engine threads; it must never run on the UI
+            // thread that Android is tearing the Activity down on.
+            if (exitStarted.get()) RETIREMENT_RELEASES.execute(ending::release);
             else ending.stop(EngineSession.StopReason.ACTIVITY_DESTROYED,
-                    ending::release);
+                    () -> RETIREMENT_RELEASES.execute(ending::release));
         }
         detachViews();
     }

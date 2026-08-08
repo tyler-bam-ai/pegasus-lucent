@@ -480,24 +480,41 @@ final class PpssppGlesEngineSession implements EngineSession,
         resumeRequested = false;
         finishActiveInterval();
         lifecycle.execute(() -> {
-            ExperimentalGlesRenderLoop active = renderLoop;
-            if (active != null) active.pauseAndWait();
-            Throwable saveFailure = saveQuickResume(true);
-            if (!QuickResumePolicy.mayCompleteStop(
-                    reason == StopReason.EXIT_TO_LUCENT, saveFailure == null)) {
-                stopping.set(false);
-                Listener callback = listener;
-                if (callback != null) callback.onSessionError(
-                        "Lucent could not protect Quick Resume. The game is still open; " +
-                                "return only if you accept losing this session.", saveFailure);
-                return;
+            try {
+                ExperimentalGlesRenderLoop active = renderLoop;
+                if (active != null) active.pauseAndWait();
+                Throwable saveFailure = saveQuickResume(true);
+                if (!QuickResumePolicy.mayCompleteStop(
+                        reason == StopReason.EXIT_TO_LUCENT, saveFailure == null)) {
+                    stopping.set(false);
+                    Listener callback = listener;
+                    // The rejection channel keeps gameplay retained and lets
+                    // the host reset its exit latch; onSessionError would show
+                    // the fatal overlay over a still-playable game.
+                    if (callback != null) callback.onSessionStopRejected(
+                            "Lucent could not protect Quick Resume. The game is still open; " +
+                                    "return only if you accept losing this session.", saveFailure);
+                    return;
+                }
+                detachSecondaryBeforeBlank(active);
+                releaseAudio();
+                loopClose(renderLoop);
+                renderLoop = null;
+                prepared = false;
+                completion.complete();
+            } catch (Throwable failure) {
+                // A wedged or already-closed render loop must never strand the
+                // session: without completion the host keeps it in the retiring
+                // set forever and the gameplay root and Activity leak. The
+                // previous verified Quick Resume remains on disk.
+                Log.e(TAG, "Stop teardown failed engine=" + entry.id +
+                        " marker=save-failure", failure);
+                try { releaseAudio(); } catch (Throwable ignored) {}
+                try { loopClose(renderLoop); } catch (Throwable ignored) {}
+                renderLoop = null;
+                prepared = false;
+                completion.complete();
             }
-            detachSecondaryBeforeBlank(active);
-            releaseAudio();
-            loopClose(renderLoop);
-            renderLoop = null;
-            prepared = false;
-            completion.complete();
         });
     }
 

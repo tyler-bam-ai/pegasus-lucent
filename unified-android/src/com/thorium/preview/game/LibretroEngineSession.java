@@ -726,9 +726,20 @@ public final class LibretroEngineSession implements EngineSession,
                             }
                             notifyRestoreAvailability();
                         }
-                    } catch (Throwable ignored) {
-                        // Never strand the user in a game when a core cannot serialize.
-                        // The previous verified Quick Resume remains untouched.
+                    } catch (Throwable failure) {
+                        // Never strand the user in a game when a core cannot
+                        // serialize; the previous verified Quick Resume remains
+                        // untouched. But a swallowed failure must stay visible:
+                        // runtime acceptance greps for this marker, and the
+                        // listener surfaces it after the library returns.
+                        Log.w(TAG, "Exit save failed engine=" + entry.id +
+                                " system=" + request.systemId +
+                                " marker=save-failure", failure);
+                        Listener callback = listener;
+                        if (waitForCommit && callback != null)
+                            callback.onSessionStopRejected(
+                                    "Lucent kept your previous Quick Resume point.",
+                                    failure);
                     } finally {
                         if (completion != null) completion.complete();
                     }
