@@ -32,6 +32,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import com.thorium.lucent.metadata.EngineSystemIdResolver;
 import com.thorium.preview.PreviewService;
 
 /**
@@ -222,6 +223,11 @@ public final class InWindowGameHost
         String path = clean(source.getStringExtra("path"));
         String system = clean(source.getStringExtra("system_id"));
         if (system.isEmpty()) system = clean(source.getStringExtra("system"));
+        // Library metadata may carry a frontend alias ("gc", "n3ds", "ds")
+        // rather than the engine-facing canonical id. Resolve it here so an
+        // alias never fails closed as an unpackaged engine route.
+        if (!system.isEmpty())
+            system = EngineSystemIdResolver.canonical(system);
         String engine = clean(source.getStringExtra("engine_id"));
         if (engine.isEmpty() && !system.isEmpty()) {
             InternalEngineCatalog.Entry entry =
