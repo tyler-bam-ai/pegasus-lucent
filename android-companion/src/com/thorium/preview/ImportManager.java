@@ -10,6 +10,9 @@ import android.os.Environment;
 import android.os.SystemClock;
 import android.util.Log;
 
+import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry;
+import org.apache.commons.compress.archivers.sevenz.SevenZFile;
+import org.apache.commons.compress.archivers.sevenz.SevenZFileOptions;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -47,6 +50,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -59,7 +63,12 @@ import java.util.zip.ZipFile;
  */
 final class ImportManager {
     private static final String TAG = "ThorImporter";
-    private static final String USER_AGENT = "THOR-Pegasus-Importer/1.0";
+    private static final String USER_AGENT = "Lucent-Importer/1.0";
+    private static final long MAX_ARCHIVE_ENTRY_BYTES = 128L * 1024L * 1024L * 1024L;
+    private static final long ARCHIVE_INSPECTION_BYTES = 8L * 1024L * 1024L;
+    private static final SevenZFileOptions SEVEN_Z_OPTIONS = SevenZFileOptions.builder()
+            .withMaxMemoryLimitInKb(448 * 1024)
+            .build();
     private static final File DOWNLOADS = Environment.getExternalStoragePublicDirectory(
             Environment.DIRECTORY_DOWNLOADS);
     private static final File GAMES = new File(Environment.getExternalStorageDirectory(), "Games");
@@ -185,6 +194,21 @@ final class ImportManager {
         }
     }
 
+    /** Atomically acknowledge the one frontend rebuild requested by a
+     * completed import. Clearing the bit before relaunch prevents the fresh
+     * QML instance from entering a restart loop when it reads status. */
+    boolean consumeReloadRequest() {
+        synchronized (statusLock) {
+            if (!status.optBoolean("needsReload", false)) return false;
+            try {
+                status.put("needsReload", false);
+                status.put("message", "New games indexed • refreshing Lucent library…");
+                status.put("updatedAt", System.currentTimeMillis());
+            } catch (Exception ignored) {}
+            return true;
+        }
+    }
+
     Set<String> activeSystemFolders() {
         Set<String> systems = new LinkedHashSet<>();
         JSONArray registry = readRegistry();
@@ -282,7 +306,7 @@ final class ImportManager {
         }
     }
 
-    synchronized boolean trashGame(String identity) {
+    synchronized boolean deleteGame(String identity) {
         if (identity == null || identity.isEmpty()) return false;
         JSONArray registry = readRegistry();
         int found = -1;
@@ -299,6 +323,9 @@ final class ImportManager {
         File rom = new File(row.optString("file"));
         if (!rom.isFile()) return false;
         File volume = storageVolumeRoot(rom);
+        // Stage the file on the same volume first, so a metadata write failure
+        // can still restore it atomically. The staged copy is permanently
+        // deleted only after Pegasus's registry and metadata commit succeeds.
         File trash = new File(new File(volume, ".LucentTrash"),
                 row.optString("system", "unknown"));
         if (!trash.mkdirs() && !trash.isDirectory()) return false;
@@ -308,12 +335,20 @@ final class ImportManager {
             registry.remove(found);
             writeJsonAtomic(REGISTRY, registry);
             writeMetadata(registry);
-            return true;
+            if (target.delete()) return true;
+
+            // A filesystem refusal must not silently turn a permanent-delete
+            // request into an undeclared recoverable trash operation.
+            if (!target.renameTo(rom)) return false;
+            registry.put(row);
+            writeJsonAtomic(REGISTRY, registry);
+            writeMetadata(registry);
+            return false;
         } catch (Exception error) {
             // Restore the ROM if metadata could not be committed. A failed UI
             // operation must never leave a game silently detached from Pegasus.
             target.renameTo(rom);
-            Log.e(TAG, "Unable to move game to Lucent trash", error);
+            Log.e(TAG, "Unable to permanently delete game", error);
             return false;
         }
     }
@@ -494,7 +529,7 @@ final class ImportManager {
             // Replace provisional registry rows with enriched records.
             registry = mergeRegistry(readRegistry(), imported);
             writeJsonAtomic(REGISTRY, registry);
-            setStatus("writing", 0.90, "Updating Pegasus metadata…", titles,
+            setStatus("writing", 0.90, "Updating Lucent library…", titles,
                     imported.size(), false);
             writeMetadata(registry);
         }
@@ -507,16 +542,10 @@ final class ImportManager {
         boolean reload = !imported.isEmpty();
         if (!imported.isEmpty()) {
             message = imported.size() + (imported.size() == 1 ? " game added" : " games added");
-            message += " • reload Pegasus when convenient";
+            message += " • reload Lucent when convenient";
         } else {
             message = "Library scan complete • no new games";
         }
-        List<EmulatorCatalog.Entry> missingEmulators = EmulatorCatalog.missingFor(
-                context, activeSystemFolders());
-        if (!missingEmulators.isEmpty())
-            message += " • " + missingEmulators.size() +
-                    (missingEmulators.size() == 1 ? " emulator needs" : " emulators need") +
-                    " Android install confirmation";
         setStatus("complete", 1.0, message, titles, imported.size(), reload);
     }
 
@@ -532,9 +561,10 @@ final class ImportManager {
         for (File file : files) {
             if (!file.isFile() || file.getName().startsWith(".") || isPartial(file.getName())) continue;
             String extension = extension(file.getName());
-            if ("zip".equals(extension)) {
+            if ("zip".equals(extension) || "7z".equals(extension)) {
                 if (isSwitchSupplementalName(file.getName())) continue;
-                found.addAll(inspectZip(file, cacheRoot));
+                found.addAll("zip".equals(extension) ? inspectZip(file, cacheRoot) :
+                        inspectSevenZip(file, cacheRoot));
                 continue;
             }
             if (isSwitchExtension(extension) && isSwitchSupplementalName(file.getAbsolutePath()))
@@ -735,7 +765,7 @@ final class ImportManager {
                 File temporary = new File(staging, sha1(archive.getAbsolutePath() + "!" + entry.getName()) +
                         "." + ext);
                 try {
-                    extract(zip, entry, temporary);
+                    extract(zip, entry, temporary, ARCHIVE_INSPECTION_BYTES);
                     GameSystems.SystemDef system = identify(temporary, ext);
                     if (system != null) {
                         String title = cleanTitle(stem(new File(entry.getName()).getName()));
@@ -750,6 +780,47 @@ final class ImportManager {
                 }
             });
         } catch (Exception ignored) {
+        }
+        return found;
+    }
+
+    /** Inspect every plausible payload in a 7z archive rather than trusting
+     * the archive filename. This mirrors ZIP handling: Lucent only accepts an
+     * entry after its extracted bytes validate as a ROM for a known system. */
+    private List<Candidate> inspectSevenZip(File archive, File cacheRoot) {
+        List<Candidate> found = new ArrayList<>();
+        File staging = new File(cacheRoot, "7z-inspect");
+        staging.mkdirs();
+        try (SevenZFile sevenZ = new SevenZFile(archive, SEVEN_Z_OPTIONS)) {
+            SevenZArchiveEntry entry;
+            while ((entry = sevenZ.getNextEntry()) != null) {
+                if (entry.isDirectory() || !entry.hasStream() || entry.getSize() <= 0 ||
+                        entry.getSize() > MAX_ARCHIVE_ENTRY_BYTES) continue;
+                String ext = extension(entry.getName());
+                if (isSwitchExtension(ext) && (isSwitchSupplementalName(archive.getName()) ||
+                        isSwitchSupplementalName(entry.getName()))) continue;
+                if (GameSystems.unambiguousByExtension(ext) == null &&
+                        !isPotentialAmbiguous(ext)) continue;
+                File temporary = new File(staging,
+                        sha1(archive.getAbsolutePath() + "!" + entry.getName()) + "." + ext);
+                try {
+                    extract(sevenZ, entry, temporary, ARCHIVE_INSPECTION_BYTES);
+                    GameSystems.SystemDef system = identify(temporary, ext);
+                    if (system != null) {
+                        String title = cleanTitle(stem(new File(entry.getName()).getName()));
+                        long signature = entry.getHasCrc() ? entry.getCrcValue() : entry.getSize();
+                        found.add(new Candidate(archive, entry.getName(), system, title,
+                                canonical(archive.getAbsolutePath()) + "!" + entry.getName() +
+                                        ":" + signature));
+                    }
+                } catch (Exception ignored) {
+                    // Malformed, unsupported, and encrypted archives remain untouched.
+                } finally {
+                    temporary.delete();
+                }
+            }
+        } catch (Exception error) {
+            Log.w(TAG, "Unable to inspect 7z archive " + archive.getAbsolutePath(), error);
         }
         return found;
     }
@@ -770,6 +841,14 @@ final class ImportManager {
                 candidate.source.delete();
                 return null;
             }
+            // Crash-safe archive recovery: Android may stop the service in
+            // the tiny interval after the verified payload is renamed but
+            // before its registry row is committed. On the next scan, accept
+            // that target only when its full size and CRC exactly match the
+            // same ZIP/7z member, then publish metadata before deleting the
+            // source archive. A title match alone is never sufficient.
+            if (candidate.zipEntry != null && archiveEntryMatchesTarget(candidate, target))
+                return new ImportedGame(candidate, target);
             // Never overwrite an existing game or silently rename a different payload.
             return null;
         }
@@ -777,6 +856,8 @@ final class ImportManager {
         File partial = new File(systemFolder, "." + target.getName() + ".importing");
         if (candidate.zipEntry == null) {
             copy(candidate.source, partial);
+        } else if ("7z".equals(extension(candidate.source.getName()))) {
+            extractSevenZipEntry(candidate.source, candidate.zipEntry, partial);
         } else {
             try (ZipFile zip = new ZipFile(candidate.source)) {
                 ZipEntry entry = zip.getEntry(candidate.zipEntry);
@@ -797,6 +878,47 @@ final class ImportManager {
             candidate.source.delete();
         }
         return new ImportedGame(candidate, target);
+    }
+
+    private static boolean archiveEntryMatchesTarget(Candidate candidate, File target) {
+        if (candidate == null || candidate.zipEntry == null || target == null || !target.isFile())
+            return false;
+        try {
+            long expectedSize = -1L;
+            long expectedCrc = -1L;
+            if ("7z".equals(extension(candidate.source.getName()))) {
+                try (SevenZFile sevenZ = new SevenZFile(candidate.source, SEVEN_Z_OPTIONS)) {
+                    SevenZArchiveEntry entry;
+                    while ((entry = sevenZ.getNextEntry()) != null) {
+                        if (candidate.zipEntry.equals(entry.getName())) {
+                            expectedSize = entry.getSize();
+                            if (entry.getHasCrc()) expectedCrc = entry.getCrcValue();
+                            break;
+                        }
+                    }
+                }
+            } else {
+                try (ZipFile zip = new ZipFile(candidate.source)) {
+                    ZipEntry entry = zip.getEntry(candidate.zipEntry);
+                    if (entry != null) {
+                        expectedSize = entry.getSize();
+                        expectedCrc = entry.getCrc();
+                    }
+                }
+            }
+            if (expectedSize < 0 || expectedSize != target.length() || expectedCrc < 0)
+                return false;
+            CRC32 crc = new CRC32();
+            try (InputStream input = new BufferedInputStream(new FileInputStream(target))) {
+                byte[] buffer = new byte[1024 * 1024];
+                int count;
+                while ((count = input.read(buffer)) >= 0) crc.update(buffer, 0, count);
+            }
+            return crc.getValue() == expectedCrc;
+        } catch (Exception error) {
+            Log.w(TAG, "Unable to verify staged archive recovery for " + target, error);
+            return false;
+        }
     }
 
     private void enrichBoxArt(ImportedGame game, File cacheRoot, File mediaRoot) {
@@ -2277,22 +2399,25 @@ final class ImportManager {
             String generatedName = "99-lucent-auto-" + system.folder +
                     ".metadata.pegasus.txt";
             activeGeneratedFiles.add(generatedName);
-            writeTextAtomic(new File(AUTO_METADATA.getParentFile(), generatedName),
-                    out.toString());
             writeTextAtomic(new File(LUCENT_AUTO_METADATA.getParentFile(), generatedName),
                     out.toString());
-            writeTextAtomic(new File(PEGASUS, generatedName), out.toString());
+            writeCompatibilityMirror(new File(AUTO_METADATA.getParentFile(), generatedName),
+                    out.toString());
         }
         cleanupGeneratedMetadata(AUTO_METADATA.getParentFile(), activeGeneratedFiles);
         cleanupGeneratedMetadata(LUCENT_AUTO_METADATA.getParentFile(), activeGeneratedFiles);
-        cleanupGeneratedMetadata(PEGASUS, activeGeneratedFiles);
+        // Both Android package variants have their own canonical `metafiles`
+        // directory. Early builds also mirrored the same generated files into
+        // the shared Pegasus root, so each ROM was parsed twice and the second
+        // pass emitted ownership conflicts. Remove those redundant mirrors.
+        cleanupGeneratedMetadata(PEGASUS, Collections.emptySet());
         // A Pegasus metafile represents one collection. Older Lucent builds
         // placed several collection headers in this combined file, causing
         // every imported game to appear in every system. Leave a harmless
         // marker at the old path while the per-system files above own games.
         String retired = "# Retired combined Lucent metadata; per-system files are authoritative.\n";
-        writeTextAtomic(AUTO_METADATA, retired);
         writeTextAtomic(LUCENT_AUTO_METADATA, retired);
+        writeCompatibilityMirror(AUTO_METADATA, retired);
         writeTextAtomic(LEGACY_AUTO_METADATA, retired);
     }
 
@@ -2483,115 +2608,11 @@ final class ImportManager {
     }
 
     private String launchCommand(String system) {
-        if (("gc".equals(system) || "wii".equals(system)) && installed("org.dolphinemu.dolphinemu"))
-            return "am start --user 0 -a android.intent.action.VIEW " +
-                    "-n org.dolphinemu.dolphinemu/.ui.main.MainActivity " +
-                    "--es AutoStartFile \"{file.path}\" --activity-clear-top";
-        if ("ps2".equals(system)) {
-            if (installed("com.armsx2"))
-                return "am start --user 0 -a android.intent.action.VIEW -d \"{file.path}\" " +
-                        "-n com.armsx2/.BootSplashActivity --activity-clear-top";
-            if (installed("xyz.aethersx2.android"))
-                return "am start --user 0 -n xyz.aethersx2.android/.EmulationActivity " +
-                        "--es bootPath \"{file.path}\" --activity-clear-top";
-        }
-        if ("switch".equals(system) && installed("dev.legacy.eden_emulator"))
-            return "am start --user 0 -a com.thorium.preview.LAUNCH_FILE " +
-                    "-n com.thorium.preview/.RomLaunchActivity --es path \"{file.path}\" " +
-                    "--es target_package dev.legacy.eden_emulator " +
-                    "--es target_activity org.yuzu.yuzu_emu.activities.EmulationActivity --activity-clear-top";
-        if ("switch".equals(system) && installed("org.citron.citron_emu"))
-            return "am start --user 0 -a com.thorium.launchbridge.LAUNCH_FILE " +
-                    "-n com.thorium.preview/com.thorium.launchbridge.LaunchActivity " +
-                    "--es path \"{file.path}\" --ez switch_mode true --activity-clear-top";
-        if ("wiiu".equals(system) && installed("info.cemu.cemu"))
-            return "am start --user 0 -a com.thorium.preview.LAUNCH_FILE " +
-                    "-n com.thorium.preview/.RomLaunchActivity --es path \"{file.path}\" " +
-                    "--es target_package info.cemu.cemu " +
-                    "--es target_activity info.cemu.cemu.emulation.EmulationActivity --activity-clear-top";
-        if ("psx".equals(system) && installed("com.github.stenzek.duckstation"))
-            return "am start --user 0 -n com.github.stenzek.duckstation/.EmulationActivity " +
-                    "--es bootPath \"{file.path}\" --activity-clear-top";
-        if ("psp".equals(system) && installed("org.ppsspp.ppsspp"))
-            return "am start --user 0 -a android.intent.action.VIEW -d \"{file.path}\" " +
-                    "-n org.ppsspp.ppsspp/.PpssppActivity --activity-clear-top";
-        if ("psp".equals(system) && installed("org.ppsspp.ppssppgold"))
-            return "am start --user 0 -a android.intent.action.VIEW -d \"{file.path}\" " +
-                    "-n org.ppsspp.ppssppgold/org.ppsspp.ppsspp.PpssppActivity --activity-clear-top";
-        if ("n64".equals(system) && installed("org.mupen64plusae.v3.fzurita.pro"))
-            return "am start --user 0 -a android.intent.action.VIEW -d \"{file.path}\" " +
-                    "-n org.mupen64plusae.v3.fzurita.pro/paulscode.android.mupen64plusae.SplashActivity --activity-clear-top";
-        if ("n64".equals(system) && installed("org.mupen64plusae.v3.fzurita"))
-            return "am start --user 0 -a android.intent.action.VIEW -d \"{file.path}\" " +
-                    "-n org.mupen64plusae.v3.fzurita/paulscode.android.mupen64plusae.SplashActivity --activity-clear-top";
-        if ("n3ds".equals(system) && installed("org.azahar_emu.azahar"))
-            return "am start --user 0 -a android.intent.action.VIEW -d \"{file.path}\" " +
-                    "-n org.azahar_emu.azahar/org.citra.citra_emu.ui.main.MainActivity --activity-clear-top";
-        if ("n3ds".equals(system) && installed("org.citra.citra_emu"))
-            return "am start --user 0 -a android.intent.action.VIEW -d \"{file.path}\" " +
-                    "-n org.citra.citra_emu/.ui.main.MainActivity --activity-clear-top";
-        if ("n3ds".equals(system) && installed("io.github.lime3ds.android"))
-            return bridgeLaunch("io.github.lime3ds.android",
-                    "org.citra.citra_emu.activities.EmulationActivity");
-
-        // Standalone emulators use a FileProvider bridge so new imports launch
-        // the game itself rather than dropping the user into an emulator menu.
-        if ("arcade".equals(system) && installed("com.seleuco.mame4d2024"))
-            return bridgeLaunch("com.seleuco.mame4d2024",
-                    "com.seleuco.mame4droid.MAME4droid");
-        if ("atari2600".equals(system) && installed("com.explusalpha.A2600Emu"))
-            return bridgeLaunch("com.explusalpha.A2600Emu", "com.imagine.BaseActivity");
-        if ("c64".equals(system) && installed("com.explusalpha.C64Emu"))
-            return bridgeLaunch("com.explusalpha.C64Emu", "com.imagine.BaseActivity");
-        if ("nes".equals(system) && installed("com.explusalpha.NesEmu"))
-            return bridgeLaunch("com.explusalpha.NesEmu", "com.imagine.BaseActivity");
-        if ("snes".equals(system) && installed("com.explusalpha.Snes9xPlus"))
-            return bridgeLaunch("com.explusalpha.Snes9xPlus", "com.imagine.BaseActivity");
-        if (("gb".equals(system) || "gbc".equals(system)) &&
-                installed("com.explusalpha.GbcEmu"))
-            return bridgeLaunch("com.explusalpha.GbcEmu", "com.imagine.BaseActivity");
-        if ("gba".equals(system) && installed("com.explusalpha.GbaEmu"))
-            return bridgeLaunch("com.explusalpha.GbaEmu", "com.imagine.BaseActivity");
-        if (("sg1000".equals(system) || "mastersystem".equals(system) ||
-                "megadrive".equals(system) || "segacd".equals(system) ||
-                "sega32x".equals(system) || "gamegear".equals(system)) &&
-                installed("com.explusalpha.MdEmu"))
-            return bridgeLaunch("com.explusalpha.MdEmu", "com.imagine.BaseActivity");
-        if (("pcengine".equals(system) || "pcenginecd".equals(system)) &&
-                installed("com.PceEmu"))
-            return bridgeLaunch("com.PceEmu", "com.imagine.BaseActivity");
-        if (("neogeo".equals(system) || "neogeocd".equals(system)) &&
-                installed("com.explusalpha.NeoEmu"))
-            return bridgeLaunch("com.explusalpha.NeoEmu", "com.imagine.BaseActivity");
-        if ("ngp".equals(system) && installed("com.explusalpha.NgpEmu"))
-            return bridgeLaunch("com.explusalpha.NgpEmu", "com.imagine.BaseActivity");
-        if (("wonderswan".equals(system) || "wonderswancolor".equals(system)) &&
-                installed("com.explusalpha.SwanEmu"))
-            return bridgeLaunch("com.explusalpha.SwanEmu", "com.imagine.BaseActivity");
-        if ("saturn".equals(system) && installed("com.explusalpha.SaturnEmu"))
-            return bridgeLaunch("com.explusalpha.SaturnEmu", "com.imagine.BaseActivity");
-        if ("msx".equals(system) && installed("com.explusalpha.MsxEmu"))
-            return bridgeLaunch("com.explusalpha.MsxEmu", "com.imagine.BaseActivity");
-        if ("colecovision".equals(system) && installed("com.fms.colem.deluxe"))
-            return bridgeLaunch("com.fms.colem.deluxe", "com.fms.emulib.TVActivity");
-        if ("dreamcast".equals(system) && installed("com.flycast.emulator"))
-            return bridgeLaunch("com.flycast.emulator", "com.flycast.emulator.MainActivity");
-        if ("nds".equals(system) && installed("me.magnum.melonds.nightly"))
-            return bridgeLaunch("me.magnum.melonds.nightly",
-                    "me.magnum.melonds.ui.emulator.EmulatorActivity");
-        if ("nds".equals(system) && installed("me.magnum.melonds"))
-            return bridgeLaunch("me.magnum.melonds", "me.magnum.melonds.ui.emulator.EmulatorActivity");
-        if ("psvita".equals(system) && installed("org.vita3k.emulator"))
-            return bridgeLaunch("org.vita3k.emulator", "org.vita3k.emulator.Emulator");
+        if (GameLaunchRouter.supportsSystem(context, system))
+            return GameLaunchRouter.metadataCommand(context, system);
+        // Unsupported engines fail closed. Lucent never falls back to a
+        // standalone emulator, secondary Activity, or another Android task.
         return "";
-    }
-
-    private static String bridgeLaunch(String targetPackage, String targetActivity) {
-        return "am start --user 0 -a com.thorium.launchbridge.LAUNCH_FILE " +
-                "-n com.thorium.preview/com.thorium.launchbridge.LaunchActivity " +
-                "--es path \"{file.path}\" --es target_package " + targetPackage +
-                " --es target_activity " + targetActivity +
-                " --es mime application/octet-stream --activity-clear-top";
     }
 
     private boolean installed(String packageName) {
@@ -3299,11 +3320,49 @@ final class ImportManager {
         if (target.length() != source.length()) throw new java.io.IOException("copy verification failed");
     }
     private static void extract(ZipFile zip, ZipEntry entry, File target) throws Exception {
+        extract(zip, entry, target, Long.MAX_VALUE);
+    }
+    private static void extract(ZipFile zip, ZipEntry entry, File target, long limit)
+            throws Exception {
+        if (entry.getSize() > MAX_ARCHIVE_ENTRY_BYTES)
+            throw new java.io.IOException("archive entry is too large");
         target.getParentFile().mkdirs();
         try (InputStream in = new BufferedInputStream(zip.getInputStream(entry)); OutputStream out = new BufferedOutputStream(new FileOutputStream(target))) {
-            byte[] buffer = new byte[1024 * 1024]; int count; long total=0; while ((count=in.read(buffer))>=0){out.write(buffer,0,count);total+=count;}
-            if (entry.getSize() >= 0 && total != entry.getSize()) throw new java.io.IOException("archive extraction verification failed");
+            byte[] buffer = new byte[1024 * 1024]; int count; long total=0;
+            while (total < limit && (count=in.read(buffer, 0,
+                    (int)Math.min(buffer.length, limit - total)))>=0){out.write(buffer,0,count);total+=count;}
+            if (limit == Long.MAX_VALUE && entry.getSize() >= 0 && total != entry.getSize())
+                throw new java.io.IOException("archive extraction verification failed");
         }
+    }
+    private static void extract(SevenZFile sevenZ, SevenZArchiveEntry entry, File target,
+                                long limit) throws Exception {
+        if (entry.getSize() < 0 || entry.getSize() > MAX_ARCHIVE_ENTRY_BYTES)
+            throw new java.io.IOException("archive entry has an unsafe size");
+        target.getParentFile().mkdirs();
+        try (OutputStream out = new BufferedOutputStream(new FileOutputStream(target))) {
+            byte[] buffer = new byte[1024 * 1024]; int count; long total = 0;
+            while (total < limit && (count = sevenZ.read(buffer, 0,
+                    (int)Math.min(buffer.length, limit - total))) >= 0) {
+                out.write(buffer, 0, count);
+                total += count;
+            }
+            if (limit == Long.MAX_VALUE && total != entry.getSize())
+                throw new java.io.IOException("7z extraction verification failed");
+        }
+    }
+    private static void extractSevenZipEntry(File archive, String entryName, File target)
+            throws Exception {
+        try (SevenZFile sevenZ = new SevenZFile(archive, SEVEN_Z_OPTIONS)) {
+            SevenZArchiveEntry entry;
+            while ((entry = sevenZ.getNextEntry()) != null) {
+                if (!entry.isDirectory() && entryName.equals(entry.getName())) {
+                    extract(sevenZ, entry, target, Long.MAX_VALUE);
+                    return;
+                }
+            }
+        }
+        throw new java.io.IOException("7z entry is missing");
     }
     private static boolean sameContent(File left, File right) {
         if (left.length() != right.length()) return false;
@@ -3335,6 +3394,17 @@ final class ImportManager {
         if (!temp.renameTo(target)) {
             if (backup.exists()) backup.renameTo(target);
             throw new java.io.IOException("cannot commit " + target);
+        }
+    }
+    private static void writeCompatibilityMirror(File target, String value) {
+        try {
+            writeTextAtomic(target, value);
+        } catch (Exception inaccessibleLegacyPackageDirectory) {
+            // Android 11+ forbids writing another package's Android/data tree,
+            // even with broad shared-storage access. The com.thorium.preview
+            // metadata above is authoritative; this mirror exists only for
+            // in-place migrations from the retired Pegasus package.
+            Log.i(TAG, "Legacy Pegasus metadata mirror is unavailable: " + target);
         }
     }
     private static void writeJsonAtomic(File target, JSONArray value) throws Exception { writeTextAtomic(target, value.toString(2)+"\n"); }

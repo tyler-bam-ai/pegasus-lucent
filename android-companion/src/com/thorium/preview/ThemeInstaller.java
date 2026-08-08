@@ -216,9 +216,9 @@ final class ThemeInstaller {
             for (String line : lines) writer.write(line + "\n");
         }
         if (settings.isFile() && !settings.delete())
-            throw new java.io.IOException("Unable to replace Pegasus settings");
+            throw new java.io.IOException("Unable to replace Lucent settings");
         if (!temporary.renameTo(settings))
-            throw new java.io.IOException("Unable to commit Pegasus settings");
+            throw new java.io.IOException("Unable to commit Lucent settings");
     }
 
     private static String readAssetText(Context context, String name) throws Exception {

@@ -14,8 +14,11 @@ import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.GestureDetector;
+import android.view.Display;
 import android.view.MotionEvent;
 import android.view.Surface;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.TextureView;
 import android.view.View;
 import android.view.Window;
@@ -39,6 +42,8 @@ public final class PreviewActivity extends Activity {
     private TextView eyebrow;
     private TextView launchButton;
     private View blackout;
+    private SurfaceView gameplaySurface;
+    private long gameplayGeneration;
     private PlayerSlot[] slots;
     private int activeSlot = -1;
     private boolean soundEnabled;
@@ -51,7 +56,10 @@ public final class PreviewActivity extends Activity {
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            if (PreviewService.ACTION_HIDE.equals(intent.getAction())) {
+            if (PreviewService.ACTION_CLOSE.equals(intent.getAction())) {
+                stopPlayers();
+                finishAndRemoveTask();
+            } else if (PreviewService.ACTION_HIDE.equals(intent.getAction())) {
                 // Keep this non-focusable activity resident on display 4.
                 // A dual-screen emulator can cover it with its own lower-screen
                 // activity; moving this task globally disrupts display 0 on the
@@ -81,6 +89,16 @@ public final class PreviewActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // This Activity is only Lucent's private Thor lower-display surface.
+        // Fail closed if a malformed internal launch ever lands it on the
+        // primary display; gameplay and the library both belong to the one
+        // MainActivity window there.
+        Display display = getWindowManager().getDefaultDisplay();
+        if (display == null || display.getDisplayId() == Display.DEFAULT_DISPLAY) {
+            Log.e("LucentPreview", "Rejected PreviewActivity on primary display");
+            finishAndRemoveTask();
+            return;
+        }
         running = true;
         soundEnabled = getSharedPreferences("preview", MODE_PRIVATE)
                 .getBoolean(PreviewService.EXTRA_SOUND_ENABLED, false);
@@ -90,11 +108,16 @@ public final class PreviewActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
         buildUi();
         hideSystemUi();
-        startForegroundService(new Intent(this, PreviewService.class));
+        // LucentApplication starts the process-wide foreground service before
+        // any Activity. This visible secondary Activity only needs to deliver
+        // a normal start; issuing a second foreground-service request creates
+        // an independent Android deadline during process-death restoration.
+        startService(new Intent(this, PreviewService.class));
         registerReceiver(receiver, new IntentFilter(PreviewService.ACTION_UPDATE));
         registerReceiver(receiver, new IntentFilter(PreviewService.ACTION_HIDE));
         registerReceiver(receiver, new IntentFilter(PreviewService.ACTION_BLANK));
         registerReceiver(receiver, new IntentFilter(PreviewService.ACTION_AUDIO));
+        registerReceiver(receiver, new IntentFilter(PreviewService.ACTION_CLOSE));
 
         gestures = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
             @Override
@@ -116,18 +139,26 @@ public final class PreviewActivity extends Activity {
         });
         root.setOnTouchListener((view, event) -> gestures.onTouchEvent(event));
 
-        SharedPreferences preferences = getSharedPreferences("preview", MODE_PRIVATE);
-        showSelection(
-                value(getIntent(), preferences, PreviewService.EXTRA_VIDEO),
-                value(getIntent(), preferences, PreviewService.EXTRA_ART),
-                value(getIntent(), preferences, PreviewService.EXTRA_TITLE),
-                value(getIntent(), preferences, PreviewService.EXTRA_SYSTEM),
-                value(getIntent(), preferences, PreviewService.EXTRA_SCORE),
-                value(getIntent(), preferences, PreviewService.EXTRA_PRELOAD_PREV),
-                value(getIntent(), preferences, PreviewService.EXTRA_PRELOAD_NEXT),
-                value(getIntent(), preferences, PreviewService.EXTRA_PRELOAD_AUX),
-                longValue(getIntent(), preferences, PreviewService.EXTRA_SEQUENCE),
-                booleanValue(getIntent(), preferences, PreviewService.EXTRA_ADVANCE));
+        if (SecondaryGameplaySurfaceRouter.ACTION_SECONDARY_GAMEPLAY.equals(
+                getIntent().getAction())) {
+            showGameplaySurface(getIntent().getLongExtra(
+                    SecondaryGameplaySurfaceRouter.EXTRA_GENERATION, 0L));
+        } else if (PreviewService.ACTION_BLANK.equals(getIntent().getAction())) {
+            blankScreen();
+        } else {
+            SharedPreferences preferences = getSharedPreferences("preview", MODE_PRIVATE);
+            showSelection(
+                    value(getIntent(), preferences, PreviewService.EXTRA_VIDEO),
+                    value(getIntent(), preferences, PreviewService.EXTRA_ART),
+                    value(getIntent(), preferences, PreviewService.EXTRA_TITLE),
+                    value(getIntent(), preferences, PreviewService.EXTRA_SYSTEM),
+                    value(getIntent(), preferences, PreviewService.EXTRA_SCORE),
+                    value(getIntent(), preferences, PreviewService.EXTRA_PRELOAD_PREV),
+                    value(getIntent(), preferences, PreviewService.EXTRA_PRELOAD_NEXT),
+                    value(getIntent(), preferences, PreviewService.EXTRA_PRELOAD_AUX),
+                    longValue(getIntent(), preferences, PreviewService.EXTRA_SEQUENCE),
+                    booleanValue(getIntent(), preferences, PreviewService.EXTRA_ADVANCE));
+        }
     }
 
     private static String value(Intent intent, SharedPreferences preferences, String key) {
@@ -149,6 +180,16 @@ public final class PreviewActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if (SecondaryGameplaySurfaceRouter.ACTION_SECONDARY_GAMEPLAY.equals(
+                intent.getAction())) {
+            showGameplaySurface(intent.getLongExtra(
+                    SecondaryGameplaySurfaceRouter.EXTRA_GENERATION, 0L));
+            return;
+        }
+        if (PreviewService.ACTION_BLANK.equals(intent.getAction())) {
+            blankScreen();
+            return;
+        }
         showSelection(
                 safe(intent.getStringExtra(PreviewService.EXTRA_VIDEO)),
                 safe(intent.getStringExtra(PreviewService.EXTRA_ART)),
@@ -265,6 +306,7 @@ public final class PreviewActivity extends Activity {
                                String system, String score,
                                String preloadPrev, String preloadNext, String preloadAux,
                                long sequence, boolean advance) {
+        leaveGameplaySurface(true);
         final long generation = ++selectionGeneration;
         video = safe(video);
         art = safe(art);
@@ -456,6 +498,7 @@ public final class PreviewActivity extends Activity {
     }
 
     private void blankScreen() {
+        leaveGameplaySurface(false);
         ++selectionGeneration;
         stopPlayers();
         artwork.setImageDrawable(null);
@@ -466,6 +509,74 @@ public final class PreviewActivity extends Activity {
         launchButton.setVisibility(View.GONE);
         blackout.setVisibility(View.VISIBLE);
         blackout.bringToFront();
+    }
+
+    private void showGameplaySurface(long generation) {
+        if (generation <= 0L ||
+                !SecondaryGameplaySurfaceRouter.isCurrent(generation)) {
+            blankScreen();
+            return;
+        }
+        leaveGameplaySurface(false);
+        ++selectionGeneration;
+        stopPlayers();
+        artwork.setVisibility(View.GONE);
+        eyebrow.setVisibility(View.GONE);
+        titleView.setVisibility(View.GONE);
+        scoreView.setVisibility(View.GONE);
+        launchButton.setVisibility(View.GONE);
+        blackout.setVisibility(View.GONE);
+        gameplayGeneration = generation;
+        gameplaySurface = new SurfaceView(this);
+        gameplaySurface.setBackgroundColor(Color.BLACK);
+        gameplaySurface.setZOrderMediaOverlay(true);
+        gameplaySurface.setFocusable(false);
+        gameplaySurface.setFocusableInTouchMode(false);
+        gameplaySurface.getHolder().addCallback(new SurfaceHolder.Callback() {
+            @Override public void surfaceCreated(SurfaceHolder holder) {
+                SecondaryGameplaySurfaceRouter.surfaceAvailable(gameplayGeneration,
+                        holder.getSurface(), gameplaySurface.getWidth(),
+                        gameplaySurface.getHeight());
+            }
+
+            @Override public void surfaceChanged(
+                    SurfaceHolder holder, int format, int width, int height) {
+                SecondaryGameplaySurfaceRouter.surfaceAvailable(gameplayGeneration,
+                        holder.getSurface(), width, height);
+            }
+
+            @Override public void surfaceDestroyed(SurfaceHolder holder) {
+                SecondaryGameplaySurfaceRouter.surfaceDestroyed(gameplayGeneration);
+            }
+        });
+        gameplaySurface.setOnTouchListener((view, event) -> {
+            int width = Math.max(1, view.getWidth());
+            int height = Math.max(1, view.getHeight());
+            int action = event.getActionMasked();
+            boolean pressed = action != MotionEvent.ACTION_UP &&
+                    action != MotionEvent.ACTION_CANCEL;
+            SecondaryGameplaySurfaceRouter.touch(gameplayGeneration,
+                    event.getX() / width, event.getY() / height, pressed);
+            return true;
+        });
+        root.addView(gameplaySurface, fill());
+        gameplaySurface.bringToFront();
+    }
+
+    private void leaveGameplaySurface(boolean restorePreviewViews) {
+        SurfaceView existing = gameplaySurface;
+        if (existing != null) {
+            SecondaryGameplaySurfaceRouter.surfaceDestroyed(gameplayGeneration);
+            root.removeView(existing);
+            gameplaySurface = null;
+        }
+        gameplayGeneration = 0L;
+        if (restorePreviewViews) {
+            artwork.setVisibility(View.VISIBLE);
+            eyebrow.setVisibility(View.VISIBLE);
+            titleView.setVisibility(View.VISIBLE);
+            scoreView.setVisibility(View.VISIBLE);
+        }
     }
 
     private static String safe(String value) {
@@ -513,6 +624,7 @@ public final class PreviewActivity extends Activity {
         running = false;
         resumed = false;
         unregisterReceiver(receiver);
+        leaveGameplaySurface(false);
         stopPlayers();
         super.onDestroy();
     }

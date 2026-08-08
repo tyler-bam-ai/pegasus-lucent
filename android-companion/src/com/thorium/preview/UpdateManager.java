@@ -187,7 +187,7 @@ final class UpdateManager {
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(30000);
         connection.setInstanceFollowRedirects(true);
-        connection.setRequestProperty("User-Agent", "Pegasus-Lucent-Updater/1.0");
+        connection.setRequestProperty("User-Agent", "Lucent-Updater/1.0");
         try (InputStream input = new BufferedInputStream(connection.getInputStream());
              ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             byte[] buffer = new byte[32 * 1024];
@@ -213,7 +213,7 @@ final class UpdateManager {
         connection.setConnectTimeout(20000);
         connection.setReadTimeout(60000);
         connection.setInstanceFollowRedirects(true);
-        connection.setRequestProperty("User-Agent", "Pegasus-Lucent-Updater/1.0");
+        connection.setRequestProperty("User-Agent", "Lucent-Updater/1.0");
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         try (InputStream input = new BufferedInputStream(connection.getInputStream());
              BufferedOutputStream output = new BufferedOutputStream(new FileOutputStream(partial))) {

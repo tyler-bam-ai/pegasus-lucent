@@ -217,11 +217,11 @@ public final class BrowserActivity extends Activity {
         String scheme = uri.getScheme();
         if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
             return false;
-        try {
-            startActivity(new Intent(Intent.ACTION_VIEW, uri));
-        } catch (Exception error) {
-            Toast.makeText(this, "No app can open this link", Toast.LENGTH_SHORT).show();
-        }
+        // Keep Lucent's browser in the same package. Downloads are handled by
+        // BrowserDownloadListener; arbitrary deep links must not switch into
+        // another application or create a second app/task identity.
+        Toast.makeText(this, "Only web links and downloads open inside Lucent",
+                Toast.LENGTH_SHORT).show();
         return true;
     }
 

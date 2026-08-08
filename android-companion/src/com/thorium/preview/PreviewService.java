@@ -6,6 +6,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.os.Build;
 import android.os.Handler;
@@ -33,6 +34,9 @@ public final class PreviewService extends Service {
     public static final String ACTION_BLANK = "com.thorium.preview.BLANK";
     public static final String ACTION_AUDIO = "com.thorium.preview.AUDIO";
     public static final String ACTION_SUSPEND = "com.thorium.preview.SUSPEND";
+    public static final String ACTION_GAMEPLAY = "com.thorium.preview.GAMEPLAY";
+    public static final String ACTION_LIBRARY = "com.thorium.preview.LIBRARY";
+    public static final String ACTION_CLOSE = "com.thorium.preview.CLOSE";
     public static final String ACTION_LAUNCH = "com.thorium.preview.LAUNCH";
     public static final String ACTION_COMPLETED = "com.thorium.preview.COMPLETED";
     public static final String EXTRA_VIDEO = "video";
@@ -51,6 +55,7 @@ public final class PreviewService extends Service {
     private volatile boolean running;
     private volatile long suppressPlayUntil;
     private volatile boolean previewActive;
+    private volatile boolean gameplayActive;
     // Unlike a launch-time hide, TOP preview placement is persistent.  Do not
     // let the normal Pegasus heartbeat resurrect lower-display playback until
     // a subsequent /play request explicitly returns placement to the Thor.
@@ -87,13 +92,41 @@ public final class PreviewService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        // Android starts a fresh service process during process-death Quick
+        // Resume. Enter foreground state before any library migration, theme
+        // installation, importer construction, or updater work can consume
+        // the platform's five-second deadline.
+        ensureForeground();
         importManager = new ImportManager(this);
         updateManager = new UpdateManager(this);
         libraryIndexManager = new LibraryIndexManager();
         thorLedManager = new ThorLedManager(this);
+        Thread launchMigration = new Thread(() -> {
+            int changed = LaunchMetadataRouter.normalize(this);
+            if (changed > 0) {
+                Log.i("LucentLaunchMetadata",
+                        "Migrated " + changed + " collection launch routes");
+                // Do not force-restart Pegasus here. On large libraries the
+                // frontend may still be creating its first window; clearing
+                // that task can leave Android with no focused window and
+                // trigger an ANR. New imports already emit the stable route,
+                // while a migrated legacy library is picked up by the next
+                // normal library/app reload.
+            }
+        }, "lucent-launch-metadata");
+        launchMigration.setDaemon(true);
+        launchMigration.start();
         if (ThemeInstaller.hasStorageAccess(this)) {
             ThemeInstaller.installBundledIfNeeded(this, () -> updateManager.checkAsync(false));
         }
+        startServer();
+        // Both checks are independent and non-blocking. The importer is
+        // fingerprint-throttled, while the updater performs lightweight
+        // version checks and only downloads changed artifacts.
+        importManager.startInitialScan();
+    }
+
+    private void ensureForeground() {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         NotificationChannel channel = new NotificationChannel(
                 "preview", "Lucent", NotificationManager.IMPORTANCE_MIN);
@@ -106,16 +139,38 @@ public final class PreviewService extends Service {
                 .setOngoing(true)
                 .build();
         startForeground(43821, notification);
-        startServer();
-        // Both checks are independent and non-blocking. The importer is
-        // fingerprint-throttled, while the updater performs lightweight
-        // version checks and only downloads changed artifacts.
-        importManager.startInitialScan();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && ACTION_SUSPEND.equals(intent.getAction())) {
+        // Every startForegroundService request owns a platform deadline, even
+        // when this sticky service already exists. Reassert foreground state
+        // before action dispatch so duplicate process-restoration starts can
+        // never leave an outstanding deadline behind.
+        ensureForeground();
+        if (intent != null && ACTION_GAMEPLAY.equals(intent.getAction())) {
+            gameplayActive = true;
+            placementBlank = false;
+            previewActive = false;
+            suppressPlayUntil = SystemClock.elapsedRealtime() + 5000L;
+            mainHandler.removeCallbacks(pegasusWatchdog);
+            // Keep the secondary display owned by Lucent but render it fully
+            // black for every single-screen game. Closing this resident lower
+            // display surface exposes Android's launcher, which is both a
+            // burn-in risk and visually misleading. Emulation itself remains
+            // exclusively inside Lucent's MainActivity on display 0.
+            if (PreviewActivity.isVisible()) {
+                sendBroadcast(new Intent(ACTION_BLANK).setPackage(getPackageName()));
+            } else {
+                launchPlayerOnSecondary(new Intent(this, PreviewActivity.class)
+                        .setAction(ACTION_BLANK)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK |
+                                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
+            }
+        } else if (intent != null && ACTION_LIBRARY.equals(intent.getAction())) {
+            gameplayActive = false;
+            suppressPlayUntil = 0L;
+        } else if (intent != null && ACTION_SUSPEND.equals(intent.getAction())) {
             placementBlank = true;
             previewActive = false;
             sendBroadcast(new Intent(ACTION_BLANK).setPackage(getPackageName()));
@@ -176,7 +231,7 @@ public final class PreviewService extends Service {
             }
 
             if ("/play".equals(path)) {
-                if (SystemClock.elapsedRealtime() < suppressPlayUntil) {
+                if (gameplayActive || SystemClock.elapsedRealtime() < suppressPlayUntil) {
                     respond(writer, "200 OK", "{\"ok\":true,\"suppressed\":true}");
                     return;
                 }
@@ -238,7 +293,7 @@ public final class PreviewService extends Service {
                     // Reclaim only the secondary display while Pegasus is
                     // actively heartbeating on the upper display.
                     if (!PreviewActivity.isVisible()) showLastPlayer();
-                } else if (now >= suppressPlayUntil) {
+                } else if (!gameplayActive && now >= suppressPlayUntil) {
                     // Pegasus has become active again after a game, Home, or a
                     // process restart. Restore the last selection without
                     // requiring the user to move to another item first.
@@ -344,11 +399,12 @@ public final class PreviewService extends Service {
                 respond(writer, "202 Accepted", importManager.statusJson());
             } else if ("/import/status".equals(path)) {
                 respond(writer, "200 OK", importManager.statusJson());
+            } else if ("/import/reload".equals(path)) {
+                boolean reload = importManager.consumeReloadRequest();
+                respond(writer, "200 OK", "{\"ok\":" + reload + "}");
+                if (reload) mainHandler.postDelayed(this::reloadLucentFrontend, 220L);
             } else if ("/library/index".equals(path)) {
                 respond(writer, "200 OK", libraryIndexManager.json());
-            } else if ("/emulators/status".equals(path)) {
-                respond(writer, "200 OK", EmulatorCatalog.statusJson(
-                        this, importManager.activeSystemFolders()));
             } else if ("/archive/list".equals(path)) {
                 respond(writer, "200 OK", importManager.archiveJson());
             } else if ("/archive/include".equals(path)) {
@@ -364,9 +420,9 @@ public final class PreviewService extends Service {
                         "{\"ok\":" + renamed + "}");
             } else if ("/game/delete".equals(path)) {
                 Map<String, String> values = parseQuery(query);
-                boolean trashed = importManager.trashGame(values.getOrDefault("id", ""));
-                respond(writer, trashed ? "200 OK" : "404 Not Found",
-                        "{\"ok\":" + trashed + ",\"recoverable\":true}");
+                boolean deleted = importManager.deleteGame(values.getOrDefault("id", ""));
+                respond(writer, deleted ? "200 OK" : "404 Not Found",
+                        "{\"ok\":" + deleted + ",\"recoverable\":false}");
             } else if ("/update/check".equals(path)) {
                 updateManager.checkAsync(true);
                 respond(writer, "202 Accepted", updateManager.statusJson());
@@ -376,9 +432,25 @@ public final class PreviewService extends Service {
                 updateManager.installDownloadedApk();
                 respond(writer, "202 Accepted", updateManager.statusJson());
             } else {
-                respond(writer, "200 OK", "{\"service\":\"pegasus-lucent\",\"ok\":true}");
+                respond(writer, "200 OK", "{\"service\":\"lucent\",\"ok\":true}");
             }
         } catch (Exception ignored) {
+        }
+    }
+
+    private void reloadLucentFrontend() {
+        placementBlank = true;
+        previewActive = false;
+        sendBroadcast(new Intent(ACTION_BLANK).setPackage(getPackageName()));
+        Intent frontend = new Intent(Intent.ACTION_MAIN)
+                .setComponent(new ComponentName(getPackageName(),
+                        "org.pegasus_frontend.android.MainActivity"))
+                .addCategory(Intent.CATEGORY_LAUNCHER)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        try {
+            startActivity(frontend);
+        } catch (RuntimeException error) {
+            Log.e("LucentImport", "Unable to refresh Lucent after import", error);
         }
     }
 
@@ -429,6 +501,11 @@ public final class PreviewService extends Service {
                 .putExtra(EXTRA_PRELOAD_AUX, preloadAux)
                 .putExtra(EXTRA_ADVANCE, advance)
                 .putExtra(EXTRA_SEQUENCE, sequence);
+        launchPlayerOnSecondary(activity);
+    }
+
+    /** Places Lucent's private preview/blackout surface on the physical lower display. */
+    private void launchPlayerOnSecondary(Intent activity) {
         ActivityOptions options = ActivityOptions.makeBasic();
         int displayId = BootReceiver.secondaryDisplayId(this);
         // The native companion is exclusively a physical-secondary-display

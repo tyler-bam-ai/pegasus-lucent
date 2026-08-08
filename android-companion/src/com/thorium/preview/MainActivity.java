@@ -177,8 +177,9 @@ public final class MainActivity extends Activity {
 
     private void startLucentService() {
         Intent service = new Intent(this, PreviewService.class);
-        if (Build.VERSION.SDK_INT >= 26) startForegroundService(service);
-        else startService(service);
+        // This visible Activity is already a foreground entry point. Reserve
+        // startForegroundService for BootReceiver's background-only start.
+        startService(service);
     }
 
     private void repairTheme() {
