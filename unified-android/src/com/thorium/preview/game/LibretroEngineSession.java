@@ -200,7 +200,7 @@ public final class LibretroEngineSession implements EngineSession,
                                 engineIdentity,
                                 "serialize-v" + entry.stateCompatibilityVersion,
                                 firmware);
-                        vault = new StateVault(new File(appContext.getFilesDir(), "state-vault"));
+                        vault = StateVault.shared(new File(appContext.getFilesDir(), "state-vault"));
                         vaultWorker = new StateVaultWorker(vault);
                         StateLoadResult quick = vault.loadQuickResume(identity);
                         if (quick.status == StateLoadResult.Status.OK) {

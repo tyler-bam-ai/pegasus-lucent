@@ -158,7 +158,7 @@ final class PpssppGlesEngineSession implements EngineSession,
                         "phase2-libretro-serialize-v" +
                                 entry.stateCompatibilityVersion,
                         runtime.firmwareIdentity);
-                vault = new StateVault(new File(appContext.getFilesDir(),
+                vault = StateVault.shared(new File(appContext.getFilesDir(),
                         "phase2-state-vault"));
                 saveRamFile = new File(saves, "save-ram.bin");
                 StateLoadResult quick = vault.loadQuickResume(identity);

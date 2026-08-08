@@ -47,6 +47,26 @@ public final class StateVault {
         this.retention = retention;
     }
 
+    /**
+     * Vault operations synchronize on the instance, so two sessions holding
+     * separate instances over one root (a retiring game plus its relaunch)
+     * could interleave save and prune. Production callers share one instance
+     * per root through this factory; direct construction remains for tests.
+     */
+    public static StateVault shared(File root) {
+        if (root == null)
+            throw new IllegalArgumentException("StateVault dependencies cannot be null");
+        String key = root.getAbsolutePath();
+        StateVault current = SHARED.get(key);
+        if (current != null) return current;
+        StateVault created = new StateVault(root);
+        StateVault existing = SHARED.putIfAbsent(key, created);
+        return existing != null ? existing : created;
+    }
+
+    private static final java.util.concurrent.ConcurrentHashMap<String, StateVault> SHARED =
+            new java.util.concurrent.ConcurrentHashMap<String, StateVault>();
+
     public synchronized StateSnapshot saveQuickResume(StateIdentity identity, byte[] state,
             byte[] webpScreenshot, long activePlayMillis) throws IOException {
         StateSnapshot snapshot = save(identity, SnapshotKind.QUICK_RESUME, state,
@@ -220,7 +240,17 @@ public final class StateVault {
 
     private void prune(StateIdentity identity) {
         List<StateSnapshot> snapshots = list(identity);
-        String protectedId = readQuickId(gameDirectory(identity));
+        File game = gameDirectory(identity);
+        String protectedId = readQuickId(game);
+        if (new File(game, QUICK_REF).exists() &&
+                (protectedId == null || !safeSnapshotId(protectedId))) {
+            // Fail closed: with no readable reference the retention policy
+            // cannot tell which Quick Resume snapshot is live and would
+            // select every one of them for deletion. An unreadable reference
+            // must protect the newest state, never expose it. Retry on the
+            // next save.
+            return;
+        }
         List<RetentionPolicy.Candidate> candidates = new ArrayList<>();
         for (StateSnapshot snapshot : snapshots)
             candidates.add(new RetentionPolicy.Candidate(snapshot.metadata.snapshotId,

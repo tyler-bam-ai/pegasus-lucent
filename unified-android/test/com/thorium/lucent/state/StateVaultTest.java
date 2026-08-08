@@ -23,6 +23,8 @@ public final class StateVaultTest {
         largeQuickResumeCommitIsAtomicAndSurvivesProcessDeath();
         quickResumeReferenceRecoversAfterInterruptedReplace();
         vaultPrunesWithoutDeletingQuickResume();
+        unreadableQuickReferenceProtectsSnapshotsFromPrune();
+        sharedVaultReturnsOneInstancePerRoot();
         quickResumeDoesNotDisplaceAutomaticHistory();
         identitiesUseSeparateStorage();
         exactCoreArtifactIdentityIsolatesState();
@@ -185,6 +187,44 @@ public final class StateVaultTest {
             TestSupport.truth(vault.list(identity).size() <= 3, "retention ceiling applied");
             TestSupport.equal(StateLoadResult.Status.OK, vault.loadQuickResume(identity).status,
                     "Quick Resume is protected even when oldest");
+        } finally { TestSupport.deleteTree(root); }
+    }
+
+    private static void unreadableQuickReferenceProtectsSnapshotsFromPrune() throws Exception {
+        File root = TestSupport.temporaryDirectory("state-prune-corrupt-ref");
+        try {
+            MutableClock clock = new MutableClock(0L);
+            StateVault vault = new StateVault(root, clock, new RetentionPolicy(2, 3, 1_000_000L));
+            StateIdentity identity = identity("engine-1");
+            StateSnapshot quick = vault.saveQuickResume(identity, new byte[] { 9 }, null, 0L);
+            File game = quick.directory.getParentFile().getParentFile();
+            FileOutputStream corrupt = new FileOutputStream(new File(game, "quick-resume.ref"));
+            corrupt.write("../not a snapshot id".getBytes(StandardCharsets.UTF_8));
+            corrupt.close();
+            for (int i = 1; i <= 6; i++) {
+                clock.now = i * 60L * 60L * 1000L;
+                vault.saveAutomatic(identity, new byte[] { (byte) i }, null, i * 100L);
+            }
+            // With the reference unreadable the retention policy cannot know
+            // which Quick Resume snapshot is live; pruning must fail closed
+            // and leave every snapshot on disk rather than delete the state
+            // the reference pointed at.
+            TestSupport.truth(quick.directory.isDirectory(),
+                    "unreadable reference protects the live Quick Resume from prune");
+        } finally { TestSupport.deleteTree(root); }
+    }
+
+    private static void sharedVaultReturnsOneInstancePerRoot() throws Exception {
+        File root = TestSupport.temporaryDirectory("state-shared-root");
+        try {
+            // Vault operations synchronize on the instance; a retiring session
+            // and its relaunch must therefore resolve to the same instance or
+            // their save and prune passes can interleave over one directory.
+            TestSupport.truth(StateVault.shared(root) == StateVault.shared(root),
+                    "one root resolves to one shared vault instance");
+            TestSupport.truth(StateVault.shared(root) !=
+                            StateVault.shared(new File(root, "other")),
+                    "different roots keep separate vault instances");
         } finally { TestSupport.deleteTree(root); }
     }
 
