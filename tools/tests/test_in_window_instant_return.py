@@ -25,7 +25,7 @@ class InWindowInstantReturnTest(unittest.TestCase):
     def test_theme_is_frozen_while_runtime_return_is_changed(self):
         self.assertEqual(
             hashlib.sha256(THEME.read_bytes()).hexdigest(),
-            "83cf832b9d037daf2be0d0e57d70f96e4df3b286a0a6041f40ee13ee37ec956d",
+            "204e4a96305a9ba459b29e5a680c36bfadc6ca91e8cacea71c6ebd4e9845834e",
         )
 
     def test_no_preparing_or_saving_interstitial_is_visible(self):
@@ -157,7 +157,13 @@ class InWindowInstantReturnTest(unittest.TestCase):
         self.assertIn("Phase2QualificationCatalog.byId(activity, engine)", request)
         self.assertIn("phaseOne != null && phaseOne.supports(system)", request)
         self.assertIn("phaseTwo != null && phaseTwo.supports(system)", request)
-        self.assertIn("if (!approvedPhaseOne && !approvedPhaseTwo)", request)
+        # Phase 3 in-process native adapters are gated by their own fail-closed
+        # catalog, so the approval expression covers all three catalogs.
+        self.assertIn("NativeAdapterCatalog.byId(activity, engine)", request)
+        self.assertIn("phaseThree != null && phaseThree.supports(system)", request)
+        self.assertIn(
+            "if (!approvedPhaseOne && !approvedPhaseTwo && !approvedPhaseThree)",
+            request)
         self.assertIn("Rejected stale/unpackaged engine route", request)
 
     def test_every_teardown_route_quiesces_before_surface_detach(self):

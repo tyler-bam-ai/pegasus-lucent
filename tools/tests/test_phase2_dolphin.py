@@ -166,17 +166,49 @@ class DolphinCompilerProofTests(unittest.TestCase):
         mapping = LIBRETRO_INPUT.read_text(encoding="utf-8")
         phase2_session = PHASE2_SESSION.read_text(encoding="utf-8")
         harness = ACTIVITY_QA.read_text(encoding="utf-8")
-        # Dolphin (GameCube/Wii) keeps A at the south position. The runtime
-        # expresses this via southIsA, which is true for dolphin (and the
-        # Nintendo handheld face group); GameCube/Wii still use the console
-        # kidney layout for west/north.
-        self.assertIn('boolean southIsA = dolphin || nintendoFace;', mapping)
-        self.assertIn('case SOUTH: return southIsA ? 8 : 0;', mapping)
-        self.assertIn('case EAST: return southIsA ? 0 : 8;', mapping)
-        self.assertIn('case L1: return gameCube ? -1 : 10;', mapping)
-        self.assertIn('case L2: return 12;', mapping)
-        self.assertIn('case R2: return 13;', mapping)
-        self.assertIn('case R1: return 11;', mapping)
+        # Dolphin (GameCube/Wii) keeps A at the south position and each console
+        # gets its own table, taken from the pinned core's own input
+        # descriptors rather than the generic RetroPad convention.
+        gamecube = mapping.split("private static int gameCube(", 1)[1].split(
+            "\n    }", 1
+        )[0]
+        self.assertIn('case SOUTH: return 8;', gamecube)   # A
+        self.assertIn('case EAST: return 0;', gamecube)    # B
+        self.assertIn('case WEST: return 1;', gamecube)    # Y
+        self.assertIn('case NORTH: return 9;', gamecube)   # X
+        self.assertIn('case L2: return 12;', gamecube)     # L trigger
+        self.assertIn('case R2: return 13;', gamecube)     # R trigger
+        self.assertIn('case R1: return 11;', gamecube)     # Z
+        # RetroPad L(10) is descGC's "Triforce - Test" and SELECT(2) its
+        # "Triforce - Coin". Neither is a GameCube control, so neither binds.
+        self.assertIn('case L1: return -1;', gamecube)
+        self.assertIn('case SELECT: return -1;', gamecube)
+        # descWiimote/descWiimoteNunchuk: X(9) is "1"/Nunchuk C, Y(1) is
+        # "2"/Nunchuk Z, L(10)/R(11) are -/+ and L2(12) shakes the Nunchuk.
+        wii = mapping.split("private static int wii(", 1)[1].split("\n    }", 1)[0]
+        self.assertIn('case SOUTH: return 8;', wii)
+        self.assertIn('case EAST: return 0;', wii)
+        self.assertIn('case WEST: return 9;', wii)
+        self.assertIn('case NORTH: return 1;', wii)
+        self.assertIn('case L1: return 10;', wii)
+        self.assertIn('case R1: return 11;', wii)
+        self.assertIn('case L2: return 12;', wii)
+        self.assertIn('case R2: return 13;', wii)
+        # Nunchuk-only titles need Dolphin's RETRO_DEVICE_WIIMOTE_NC device.
+        self.assertIn(
+            'WIIMOTE_NUNCHUK = (3 << 8) | RETRO_DEVICE_JOYPAD', mapping
+        )
+        self.assertIn('portDeviceFor(String systemId)', mapping)
+        # The Wiimote IR pointer and the GameCube C-stick are both
+        # RETRO_DEVICE_ANALOG index 1, so the right stick never becomes a
+        # digital button, and the left stick never doubles as the D-pad on a
+        # console whose core reads it as its own analog control.
+        self.assertIn('case RIGHT_X_NEGATIVE: case RIGHT_X_POSITIVE:', mapping)
+        analog = mapping.split("public static boolean hasAnalogStick(", 1)[1].split(
+            "\n    }", 1
+        )[0]
+        for system in ('"gamecube"', '"wii"', '"n64"'):
+            self.assertIn(system, analog)
         self.assertIn(
             'LibretroJoypadLayout.idFor(request.systemId, control)',
             phase2_session,

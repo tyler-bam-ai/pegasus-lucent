@@ -26,6 +26,7 @@ import com.thorium.lucent.input.FileRemapStore;
 import com.thorium.lucent.input.GamepadDescriptor;
 import com.thorium.lucent.input.InputRouter;
 import com.thorium.lucent.input.InputSignal;
+import com.thorium.lucent.input.JoypadPressLedger;
 import com.thorium.lucent.input.LibretroJoypadLayout;
 import com.thorium.lucent.input.android.AndroidDeviceScanner;
 import com.thorium.lucent.input.android.AndroidGamingDeviceDetector;
@@ -86,6 +87,16 @@ public final class LibretroEngineSession implements EngineSession,
 
     private volatile Listener listener;
     private volatile LibretroHost host;
+    // The hat, the left stick and any BTN_DPAD_* keys all mean "the D-pad" on a
+    // D-pad-only console, so several sources can assert one libretro ID. The
+    // ledger ORs them; writing each source straight through made the last
+    // writer win and a centred stick cleared a physically held hat direction.
+    // Declared after host: an initializer cannot forward-reference a field.
+    private final JoypadPressLedger joypad = new JoypadPressLedger();
+    private final JoypadPressLedger.Sink joypadSink = (retroId, pressed) -> {
+        LibretroHost active = host;
+        if (active != null) active.setJoypadButton(0, retroId, pressed);
+    };
     private volatile boolean running;
     private volatile boolean prepared;
     private volatile Thread frameThread;
@@ -173,6 +184,19 @@ public final class LibretroEngineSession implements EngineSession,
                         entry.coreFile.getParentFile(), system, saves);
                 try {
                     opened.loadGame(game);
+                    // Loading resets port 0 to a plain RetroPad. Systems whose
+                    // controller is something else must say so now: Dolphin
+                    // only attaches the Wii Nunchuk for RETRO_DEVICE_WIIMOTE_NC,
+                    // and titles that require it (Super Mario Galaxy 2) accept
+                    // no input at all until the extension is present.
+                    int portDevice =
+                            LibretroJoypadLayout.portDeviceFor(launch.systemId);
+                    if (portDevice != LibretroJoypadLayout.RETRO_DEVICE_JOYPAD) {
+                        opened.setControllerPortDevice(0, portDevice);
+                        Log.i(TAG, "Controller port device engine=" + entry.id +
+                                " system=" + launch.systemId +
+                                " device=0x" + Integer.toHexString(portDevice));
+                    }
                     saveRamFile = new File(saves, "save-ram.bin");
                     restoreSaveRam(opened, saveRamFile);
                     LibretroHost.AvInfo av = opened.avInfo();
@@ -190,6 +214,8 @@ public final class LibretroEngineSession implements EngineSession,
                         Log.i(TAG, "Audio track ready engine=" + entry.id +
                                 " rate=" + (int) Math.round(av.sampleRate) +
                                 " primeTargetSamples=" + audioPrimeSamplesTarget);
+                    EngineAudioLog.logResolvedStream(appContext, TAG, entry.id,
+                            audioTrack);
                     long previousActive = 0L;
                     if (!"scummvm".equals(entry.id)) {
                         String engineIdentity = entry.sourceCommit + ":sha256:" +
@@ -358,6 +384,67 @@ public final class LibretroEngineSession implements EngineSession,
         return true;
     }
 
+    /**
+     * Power-cycles the loaded content in place.
+     *
+     * Lucent's native host resolves retro_reset but exposes no JNI entry point
+     * for it, and that file is owned elsewhere, so this uses the reset the Java
+     * boundary can already reach: unload the game and load it again on the same
+     * core instance. Battery saves are written out first and restored after, so
+     * a reset behaves like a console power cycle rather than erasing the
+     * cartridge.
+     *
+     * The unload/load pair holds the host monitor for its whole duration.
+     * LibretroHost's own methods are synchronized on that same object, so a
+     * frame already in flight completes before the swap and the next frame can
+     * only observe the freshly loaded game — never the window in between, which
+     * the native host fails closed on ("cannot run without a loaded game").
+     */
+    @Override public boolean reset() {
+        GameLaunchRequest launch = request;
+        LibretroHost active = host;
+        if (!prepared || launch == null || active == null ||
+                stopping.get() || released.get()) return false;
+        synchronized (lifecycleSubmissionLock) {
+            if (released.get() || lifecycle.isShutdown()) return false;
+            try {
+                lifecycle.execute(() -> {
+                    LibretroHost open = host;
+                    if (open == null || stopping.get() || released.get()) return;
+                    try {
+                        File game = resolveGameFile(launch.contentUri);
+                        synchronized (open) {
+                            // A core carrying Lucent's exit-persistence
+                            // extension may refuse the unload; it then throws
+                            // and the game keeps running untouched.
+                            persistSaveRam(open);
+                            open.unloadGame();
+                            open.loadGame(game);
+                            // Loading put port 0 back to a plain RetroPad, so
+                            // a system with a different controller has to
+                            // reattach it or the reset game takes no input.
+                            int portDevice = LibretroJoypadLayout
+                                    .portDeviceFor(launch.systemId);
+                            if (portDevice != LibretroJoypadLayout.RETRO_DEVICE_JOYPAD)
+                                open.setControllerPortDevice(0, portDevice);
+                            if (saveRamFile != null) restoreSaveRam(open, saveRamFile);
+                        }
+                        flushAudioAfterRestore();
+                        Log.i(TAG, "Reset applied engine=" + entry.id +
+                                " system=" + launch.systemId + " marker=reset");
+                    } catch (Throwable failure) {
+                        Log.w(TAG, "Reset rejected engine=" + entry.id +
+                                " system=" + launch.systemId +
+                                " marker=reset-failure", failure);
+                    }
+                });
+            } catch (java.util.concurrent.RejectedExecutionException rejected) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         if (!prepared || inputRouter == null || event == null) return false;
         GamepadDescriptor device = device(event.getDeviceId());
@@ -367,12 +454,13 @@ public final class LibretroEngineSession implements EngineSession,
         }
         if (device == null) return false;
         try {
-            CanonicalControl control = inputRouter.resolve(device,
-                    InputSignal.key(event.getKeyCode()));
+            InputSignal signal = InputSignal.key(event.getKeyCode());
+            CanonicalControl control = inputRouter.resolve(device, signal);
             int retroId = joypadId(control);
             LibretroHost active = host;
             if (retroId < 0 || active == null) return false;
-            active.setJoypadButton(0, retroId, event.getAction() != KeyEvent.ACTION_UP);
+            joypad.apply(signal, retroId,
+                    event.getAction() != KeyEvent.ACTION_UP, joypadSink);
             if (!qualificationInputLogged && event.getAction() == KeyEvent.ACTION_DOWN) {
                 qualificationInputLogged = true;
                 restartQualificationPacingWindow();
@@ -451,7 +539,7 @@ public final class LibretroEngineSession implements EngineSession,
         LibretroHost active = host;
         int id = joypadId(control);
         if (!prepared || active == null || id < 0 || !shouldShowOnScreenControls()) return false;
-        active.setJoypadButton(0, id, pressed);
+        joypad.apply(control, id, pressed, joypadSink);
         return true;
     }
 
@@ -811,11 +899,12 @@ public final class LibretroEngineSession implements EngineSession,
 
     private boolean dispatchAxis(GamepadDescriptor device, int axis, int direction, boolean pressed) {
         try {
-            CanonicalControl control = inputRouter.resolve(device, InputSignal.axis(axis, direction));
+            InputSignal signal = InputSignal.axis(axis, direction);
+            CanonicalControl control = inputRouter.resolve(device, signal);
             int id = joypadId(control);
             LibretroHost active = host;
             if (id < 0 || active == null) return false;
-            active.setJoypadButton(0, id, pressed);
+            joypad.apply(signal, id, pressed, joypadSink);
             return true;
         } catch (Exception ignored) { return false; }
     }

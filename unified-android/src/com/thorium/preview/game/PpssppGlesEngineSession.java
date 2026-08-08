@@ -21,6 +21,7 @@ import com.thorium.lucent.input.FileRemapStore;
 import com.thorium.lucent.input.GamepadDescriptor;
 import com.thorium.lucent.input.InputRouter;
 import com.thorium.lucent.input.InputSignal;
+import com.thorium.lucent.input.JoypadPressLedger;
 import com.thorium.lucent.input.LibretroJoypadLayout;
 import com.thorium.lucent.input.android.AndroidDeviceScanner;
 import com.thorium.lucent.input.android.AndroidGamingDeviceDetector;
@@ -85,6 +86,14 @@ final class PpssppGlesEngineSession implements EngineSession,
     private GameLaunchRequest request;
     private CheckpointScheduler checkpointScheduler;
     private InputRouter inputRouter;
+    // Several physical sources can mean one libretro ID (hat, left stick,
+    // BTN_DPAD_* keys). The ledger ORs them so releasing one never clears a
+    // direction another source is still holding.
+    private final JoypadPressLedger joypad = new JoypadPressLedger();
+    private final JoypadPressLedger.Sink joypadSink = (retroId, pressed) -> {
+        ExperimentalGlesRenderLoop active = renderLoop;
+        if (active != null) active.setJoypadButton(0, retroId, pressed);
+    };
     private List<GamepadDescriptor> devices = new ArrayList<>();
     private final AtomicBoolean checkpointPending = new AtomicBoolean(false);
     private File saveRamFile;
@@ -407,6 +416,25 @@ final class PpssppGlesEngineSession implements EngineSession,
                 " system=" + (request == null ? "" : request.systemId));
     }
 
+    /**
+     * Fails closed until the hardware host exposes a reset.
+     *
+     * The GLES/Vulkan boundary (ExperimentalGlesRenderLoop.Host) offers no
+     * unload/load pair, so unlike the software session there is no reload to
+     * fall back on, and the one remaining primitive is unusable here: probing
+     * serialize() to capture a power-on snapshot pauses PPSSPP's emulation
+     * thread by design and only restarts on an unserialize, which is exactly
+     * why restoreQuickResume is a guarded one-shot. Nothing is faked; the host
+     * logs that the combo produced no reset. Exposing retro_reset through the
+     * native host is the single change that makes this real.
+     */
+    @Override public boolean reset() {
+        Log.w(TAG, "Reset unavailable on the hardware session engine=" + entry.id +
+                " system=" + (request == null ? "" : request.systemId) +
+                " marker=reset-unavailable");
+        return false;
+    }
+
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         ExperimentalGlesRenderLoop active = renderLoop;
         if (!prepared || active == null || inputRouter == null || event == null ||
@@ -416,12 +444,12 @@ final class PpssppGlesEngineSession implements EngineSession,
         if (pad == null) { refreshDevices(); pad = device(event.getDeviceId()); }
         if (pad == null) return false;
         try {
-            CanonicalControl control = inputRouter.resolve(pad,
-                    InputSignal.key(event.getKeyCode()));
+            InputSignal signal = InputSignal.key(event.getKeyCode());
+            CanonicalControl control = inputRouter.resolve(pad, signal);
             int button = canonicalButton(control);
             if (button < 0) return false;
             boolean pressed = event.getAction() == KeyEvent.ACTION_DOWN;
-            active.setJoypadButton(0, button, pressed);
+            joypad.apply(signal, button, pressed, joypadSink);
             Log.i(TAG, "Physical input dispatched engine=" + entry.id +
                     " key=" + event.getKeyCode() + " control=" + control +
                     " button=" + button + " pressed=" + pressed);
@@ -501,7 +529,7 @@ final class PpssppGlesEngineSession implements EngineSession,
         ExperimentalGlesRenderLoop active = renderLoop;
         if (!prepared || active == null || button < 0 ||
                 !shouldShowOnScreenControls()) return false;
-        active.setJoypadButton(0, button, pressed);
+        joypad.apply(control, button, pressed, joypadSink);
         return true;
     }
 
@@ -612,6 +640,7 @@ final class PpssppGlesEngineSession implements EngineSession,
             audioTrack = createAudioTrack(sampleRate);
             if (audioTrack == null)
                 throw new IllegalStateException("Android could not initialize stereo PCM output");
+            EngineAudioLog.logResolvedStream(appContext, TAG, entry.id, audioTrack);
             // Fill the actual streaming buffer before the first play(). A
             // A half-full start can underrun while a heavy core warms its JIT.
             audioPrimeSamplesTarget = startupAudioBufferBytes(sampleRate) / 2;
@@ -792,11 +821,11 @@ final class PpssppGlesEngineSession implements EngineSession,
     private boolean dispatchAxis(GamepadDescriptor pad, int axis, int direction,
                                  boolean pressed) {
         try {
-            int button = canonicalButton(inputRouter.resolve(pad,
-                    InputSignal.axis(axis, direction)));
+            InputSignal signal = InputSignal.axis(axis, direction);
+            int button = canonicalButton(inputRouter.resolve(pad, signal));
             ExperimentalGlesRenderLoop active = renderLoop;
             if (button < 0 || active == null) return false;
-            active.setJoypadButton(0, button, pressed);
+            joypad.apply(signal, button, pressed, joypadSink);
             return true;
         } catch (Exception ignored) { return false; }
     }

@@ -39,7 +39,7 @@ public final class SystemControlLayouts {
         twoButton.put(CanonicalControl.SELECT, "SELECT");
         add(layouts, twoButton, "atari2600", "atari5200", "atari7800", "colecovision",
                 "intellivision", "odyssey2", "pcengine", "turbografx16", "wonderswan",
-                "wonderswancolor", "neogeopocket", "neogeopocketcolor");
+                "wonderswancolor", "neogeopocket", "neogeopocketcolor", "ngp", "ngpc");
 
         Map<CanonicalControl, String> snes = base();
         snes.put(CanonicalControl.SOUTH, "A"); snes.put(CanonicalControl.EAST, "B");
@@ -65,18 +65,22 @@ public final class SystemControlLayouts {
         playstation.put(CanonicalControl.START, "START"); playstation.put(CanonicalControl.SELECT, "SELECT");
         add(layouts, playstation, "psx", "ps1", "playstation");
 
-        Map<CanonicalControl, String> n64 = baseWithSticks();
+        // The four C-buttons live on the right stick, which is what
+        // mupen64plus-next reads from RETRO_DEVICE_ANALOG index 1. The face
+        // buttons repeat C-Right/C-Up only while R2 ("C Buttons Mode") is held.
+        Map<CanonicalControl, String> n64 = baseWithAnalogStick();
         n64.put(CanonicalControl.SOUTH, "A"); n64.put(CanonicalControl.EAST, "B");
-        n64.put(CanonicalControl.NORTH, "C_UP"); n64.put(CanonicalControl.WEST, "C_LEFT");
+        n64.put(CanonicalControl.NORTH, "C_UP"); n64.put(CanonicalControl.WEST, "C_RIGHT");
         n64.put(CanonicalControl.RIGHT_X_NEGATIVE, "C_LEFT");
         n64.put(CanonicalControl.RIGHT_X_POSITIVE, "C_RIGHT");
         n64.put(CanonicalControl.RIGHT_Y_NEGATIVE, "C_UP");
         n64.put(CanonicalControl.RIGHT_Y_POSITIVE, "C_DOWN");
         n64.put(CanonicalControl.L2, "Z"); n64.put(CanonicalControl.L1, "L");
-        n64.put(CanonicalControl.R1, "R"); n64.put(CanonicalControl.START, "START");
+        n64.put(CanonicalControl.R1, "R"); n64.put(CanonicalControl.R2, "C_MODE");
+        n64.put(CanonicalControl.START, "START");
         add(layouts, n64, "n64", "nintendo64");
 
-        Map<CanonicalControl, String> gameCube = baseWithSticks();
+        Map<CanonicalControl, String> gameCube = baseWithAnalogStick();
         gameCube.put(CanonicalControl.SOUTH, "A");
         gameCube.put(CanonicalControl.EAST, "B");
         gameCube.put(CanonicalControl.WEST, "Y");
@@ -87,13 +91,20 @@ public final class SystemControlLayouts {
         gameCube.put(CanonicalControl.START, "START");
         add(layouts, gameCube, "gc", "gamecube", "nintendogamecube");
 
-        Map<CanonicalControl, String> wii = baseWithSticks();
+        // The right stick is Wiimote IR pointing (Dolphin's dolphin_ir_mode)
+        // and the left stick is the Nunchuk stick. WEST/NORTH are the Wiimote's
+        // 1/2 with no extension and the Nunchuk's C/Z once one is attached, so
+        // one table serves both device types.
+        Map<CanonicalControl, String> wii = baseWithAnalogStick();
         wii.put(CanonicalControl.SOUTH, "A");
         wii.put(CanonicalControl.EAST, "B");
-        wii.put(CanonicalControl.WEST, "1");
-        wii.put(CanonicalControl.NORTH, "2");
-        wii.put(CanonicalControl.L1, "C");
-        wii.put(CanonicalControl.R1, "Z");
+        wii.put(CanonicalControl.WEST, "1_OR_NUNCHUK_C");
+        wii.put(CanonicalControl.NORTH, "2_OR_NUNCHUK_Z");
+        wii.put(CanonicalControl.L1, "-");
+        wii.put(CanonicalControl.R1, "+");
+        wii.put(CanonicalControl.L2, "SHAKE_NUNCHUK");
+        wii.put(CanonicalControl.R2, "SHAKE_WIIMOTE");
+        wii.put(CanonicalControl.R3, "HOME");
         wii.put(CanonicalControl.START, "+");
         wii.put(CanonicalControl.SELECT, "-");
         add(layouts, wii, "wii", "nintendowii");
@@ -115,7 +126,7 @@ public final class SystemControlLayouts {
         computer.put(CanonicalControl.SOUTH, "FIRE_1"); computer.put(CanonicalControl.EAST, "FIRE_2");
         computer.put(CanonicalControl.START, "START"); computer.put(CanonicalControl.SELECT, "MENU");
         add(layouts, computer, "c64", "commodore64", "amstradcpc", "atarist", "atari8bit",
-                "msx", "zx", "zxspectrum", "dos", "windows9x");
+                "atari800", "msx", "zx", "zxspectrum", "dos", "windows9x", "scummvm");
 
         Map<String, Map<CanonicalControl, String>> frozen = new HashMap<>();
         for (Map.Entry<String, Map<CanonicalControl, String>> entry : layouts.entrySet())
@@ -123,23 +134,43 @@ public final class SystemControlLayouts {
         return Collections.unmodifiableMap(frozen);
     }
 
+    /**
+     * D-pad plus the left stick acting as that same D-pad. Every console that
+     * shipped without an analog stick accepts both, and neither cancels the
+     * other (see JoypadPressLedger), so a stick-only player can play them.
+     */
     private static Map<CanonicalControl, String> base() {
         EnumMap<CanonicalControl, String> map = new EnumMap<>(CanonicalControl.class);
         map.put(CanonicalControl.DPAD_UP, "UP"); map.put(CanonicalControl.DPAD_DOWN, "DOWN");
         map.put(CanonicalControl.DPAD_LEFT, "LEFT"); map.put(CanonicalControl.DPAD_RIGHT, "RIGHT");
+        map.put(CanonicalControl.LEFT_Y_NEGATIVE, "UP");
+        map.put(CanonicalControl.LEFT_Y_POSITIVE, "DOWN");
+        map.put(CanonicalControl.LEFT_X_NEGATIVE, "LEFT");
+        map.put(CanonicalControl.LEFT_X_POSITIVE, "RIGHT");
         return map;
     }
 
+    /** The left stick still doubles as the D-pad; the right stick is analog. */
     private static Map<CanonicalControl, String> baseWithSticks() {
         Map<CanonicalControl, String> map = base();
-        map.put(CanonicalControl.LEFT_X_NEGATIVE, "LEFT_X_NEGATIVE");
-        map.put(CanonicalControl.LEFT_X_POSITIVE, "LEFT_X_POSITIVE");
-        map.put(CanonicalControl.LEFT_Y_NEGATIVE, "LEFT_Y_NEGATIVE");
-        map.put(CanonicalControl.LEFT_Y_POSITIVE, "LEFT_Y_POSITIVE");
         map.put(CanonicalControl.RIGHT_X_NEGATIVE, "RIGHT_X_NEGATIVE");
         map.put(CanonicalControl.RIGHT_X_POSITIVE, "RIGHT_X_POSITIVE");
         map.put(CanonicalControl.RIGHT_Y_NEGATIVE, "RIGHT_Y_NEGATIVE");
         map.put(CanonicalControl.RIGHT_Y_POSITIVE, "RIGHT_Y_POSITIVE");
+        return map;
+    }
+
+    /**
+     * Consoles whose core reads the left stick as its own analog control. The
+     * stick must not also press the D-pad there: those games read the two as
+     * different inputs (LibretroJoypadLayout.hasAnalogStick).
+     */
+    private static Map<CanonicalControl, String> baseWithAnalogStick() {
+        Map<CanonicalControl, String> map = baseWithSticks();
+        map.put(CanonicalControl.LEFT_X_NEGATIVE, "LEFT_X_NEGATIVE");
+        map.put(CanonicalControl.LEFT_X_POSITIVE, "LEFT_X_POSITIVE");
+        map.put(CanonicalControl.LEFT_Y_NEGATIVE, "LEFT_Y_NEGATIVE");
+        map.put(CanonicalControl.LEFT_Y_POSITIVE, "LEFT_Y_POSITIVE");
         return map;
     }
 

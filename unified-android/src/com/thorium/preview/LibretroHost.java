@@ -77,6 +77,18 @@ public final class LibretroHost implements Closeable {
     }
 
     /**
+     * Selects the controller a core emulates on a port. Loading a game resets
+     * port 0 to a plain RetroPad, so a system whose device is something else
+     * must set it afterwards -- Dolphin only attaches a Wii Nunchuk for
+     * RETRO_DEVICE_WIIMOTE_NC, and games that require the extension refuse
+     * input without it.
+     */
+    public synchronized void setControllerPortDevice(int port, int device) {
+        checkOpen();
+        nativeSetControllerPortDevice(handle, port, device);
+    }
+
+    /**
      * Unloads the active game. Cores with a Lucent exit-persistence extension
      * may reject this call; in that case the host and game remain open.
      */
@@ -219,6 +231,8 @@ public final class LibretroHost implements Closeable {
     private static native long nativeCreate(String corePath, String trustedRoot,
                                              String systemDirectory, String saveDirectory);
     private static native void nativeLoadGame(long handle, String gamePath);
+    private static native void nativeSetControllerPortDevice(
+            long handle, int port, int device);
     private static native void nativeUnloadGame(long handle);
     private static native void nativeRunFrame(long handle);
     private static native void nativeSetPaused(long handle, boolean paused);

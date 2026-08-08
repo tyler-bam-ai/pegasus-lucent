@@ -91,6 +91,16 @@ lucent_retro_host *lucent_retro_create_with_options(
         char *error, size_t error_size);
 bool lucent_retro_load_game(lucent_retro_host *host, const char *game_path,
                             char *error, size_t error_size);
+/**
+ * Select the controller a core should emulate on a port. Loading a game resets
+ * port 0 to a plain RetroPad; systems whose device is not a RetroPad must call
+ * this afterwards. Dolphin, for example, only attaches a Wii Nunchuk when the
+ * port device is RETRO_DEVICE_WIIMOTE_NC, and games that require the extension
+ * (Super Mario Galaxy 2) accept no input until it is set.
+ */
+bool lucent_retro_set_controller_port_device(lucent_retro_host *host,
+                                             unsigned port, unsigned device,
+                                             char *error, size_t error_size);
 bool lucent_retro_unload_game(lucent_retro_host *host,
                               char *error, size_t error_size);
 bool lucent_retro_game_loaded(const lucent_retro_host *host);

@@ -70,6 +70,17 @@ Java_com_thorium_preview_LibretroHost_nativeLoadGame(
 }
 
 JNIEXPORT void JNICALL
+Java_com_thorium_preview_LibretroHost_nativeSetControllerPortDevice(
+        JNIEnv *env, jclass type, jlong handle, jint port, jint device) {
+    (void)type;
+    char error[ERROR_SIZE] = {0};
+    if (!lucent_retro_set_controller_port_device(from_handle(handle),
+            (unsigned)port, (unsigned)device, error, sizeof(error)) &&
+            !(*env)->ExceptionCheck(env))
+        throw_state(env, error);
+}
+
+JNIEXPORT void JNICALL
 Java_com_thorium_preview_LibretroHost_nativeUnloadGame(
         JNIEnv *env, jclass type, jlong handle) {
     (void)type;

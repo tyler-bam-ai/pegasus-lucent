@@ -1125,6 +1125,26 @@ bool lucent_retro_load_game(lucent_retro_host *host, const char *game_path,
     RETURN_UNLOCKED(true);
 }
 
+bool lucent_retro_set_controller_port_device(lucent_retro_host *host,
+                                             unsigned port, unsigned device,
+                                             char *error, size_t error_size) {
+    lock_host();
+    if (!host || !host->game_loaded || !host->set_controller_port_device) {
+        set_error(error, error_size, "no loaded core to configure a port on");
+        RETURN_UNLOCKED(false);
+    }
+    if (port >= MAX_PORTS) {
+        set_error(error, error_size, "controller port %u is out of range", port);
+        RETURN_UNLOCKED(false);
+    }
+    host->set_controller_port_device(port, device);
+#if defined(__ANDROID__)
+    __android_log_print(ANDROID_LOG_INFO, "LucentNativeHost",
+            "controller port %u device 0x%x", port, device);
+#endif
+    RETURN_UNLOCKED(true);
+}
+
 bool lucent_retro_unload_game(lucent_retro_host *host,
                               char *error, size_t error_size) {
     lock_host();

@@ -25,6 +25,8 @@ SOURCES=$(find "$PROJECT_DIR/src/com/thorium/lucent/state" \
 "$JAVA_HOME/bin/java" -cp "$TEST_BUILD" \
     com.thorium.lucent.input.LibretroJoypadLayoutTest
 "$JAVA_HOME/bin/java" -cp "$TEST_BUILD" \
+    com.thorium.lucent.input.JoypadPressLedgerTest
+"$JAVA_HOME/bin/java" -cp "$TEST_BUILD" \
     com.thorium.lucent.navigation.RightStickViewRouterTest
 "$JAVA_HOME/bin/java" -cp "$TEST_BUILD" \
     com.thorium.lucent.timing.AbsoluteFramePacerTest
