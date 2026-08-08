@@ -114,12 +114,21 @@ class MenuRouteClosureTest(unittest.TestCase):
         self.assertEqual(audit[0]["kind"], "stale-am-broadcast")
         self.assertFalse(audit[0]["pass"])
 
-    def test_external_or_incomplete_launcher_is_rejected_with_path_redacted(self):
+    def test_external_component_route_is_now_accepted(self):
+        # Per-system EXTERNAL routing: a direct am-start into a foreign
+        # emulator component is a valid product route.
         command = 'am start -n com.example.external/.Game --es path /private/game.rom'
+        audit = MODULE.launcher_audit(command)
+        self.assertEqual(audit[0]["kind"], "external-route")
+        self.assertTrue(audit[0]["pass"])
+        self.assertEqual([], MODULE.invalid_launch_lines(command))
+
+    def test_incomplete_launcher_is_rejected_with_path_redacted(self):
+        # A bare am-broadcast is neither the internal route nor an external one.
+        command = 'am broadcast -n com.example.external/.Game --es path /private/game.rom'
         failures = MODULE.invalid_launch_lines(command)
         self.assertEqual(len(failures), 1)
         self.assertNotIn("private", json.dumps(failures))
-        self.assertIn("does not target Lucent", failures[0]["reason"])
 
     def test_stale_same_activity_am_start_route_is_rejected(self):
         stale = (

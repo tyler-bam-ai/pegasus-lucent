@@ -140,25 +140,55 @@ def launcher_audit(value: str) -> list[dict[str, object]]:
         reasons = []
         am_start = bool(re.search(r"\bam\s+start\b", command))
         am_broadcast = bool(re.search(r"\bam\s+broadcast\b", command))
-        if MAIN_ACTIVITY not in command:
-            reasons.append("does not target Lucent MainActivity")
-        if not re.search(r"\bam\s+start\b", command):
-            reasons.append("does not use Pegasus-compatible am-start syntax")
-        if re.search(r"(?:^|\s)--user(?:\s|=)", command):
-            reasons.append("uses a forbidden cross-user flag")
-        if "-a com.thorium.preview.LAUNCH_INTERNAL_GAME" not in command:
+        internal_action = "-a com.thorium.preview.LAUNCH_INTERNAL_GAME" in command
+        cross_user = bool(re.search(r"(?:^|\s)--user(?:\s|=)", command))
+        # A per-system EXTERNAL route is now a legitimate product feature. It is
+        # a plain `am start` that either opens the emulator's install page
+        # (-a VIEW -d https://...), launches the emulator component directly, or
+        # hands a content URI through Lucent's own RomLaunchActivity trampoline.
+        # It deliberately does NOT target MainActivity or the internal action.
+        external_view_install = bool(
+            re.search(r"-a\s+android\.intent\.action\.VIEW", command) and
+            re.search(r"-d\s+https?://", command))
+        # An external component target must NOT be Lucent's own MainActivity: a
+        # bare am-start onto the singleTask MainActivity without the internal
+        # action is the historical stale route, not an external launch. The
+        # RomLaunchActivity trampoline (a different Lucent component) still
+        # counts as external.
+        external_component = (bool(re.search(r"-n\s+\S+/\S+", command)) and
+                              not internal_action and MAIN_ACTIVITY not in command)
+        kind = "intercepted-same-activity-start"
+        if internal_action:
+            # Internal in-window route: keep the full strict contract.
+            if MAIN_ACTIVITY not in command:
+                reasons.append("does not target Lucent MainActivity")
+            if not am_start:
+                reasons.append("does not use Pegasus-compatible am-start syntax")
+            if cross_user:
+                reasons.append("uses a forbidden cross-user flag")
+            if re.search(r"--es\s+(?:lucent\.)?engine_id\s+", command) is None:
+                reasons.append("has no in-window engine_id")
+            if re.search(r"--es\s+(?:lucent\.)?(?:system|system_id)\s+", command) is None:
+                reasons.append("has no in-window system id")
+        elif am_start and (external_view_install or external_component) and not am_broadcast:
+            # External route: still forbid the cross-user flag, but the internal
+            # in-window contract does not apply.
+            kind = "external-route"
+            if cross_user:
+                reasons.append("uses a forbidden cross-user flag")
+        elif MAIN_ACTIVITY in command:
+            # Targets the singleTask MainActivity but not via the internal
+            # action — the historical stale same-activity route.
             reasons.append("does not use Lucent's internal launch action")
-        if re.search(r"--es\s+(?:lucent\.)?engine_id\s+", command) is None:
-            reasons.append("has no in-window engine_id")
-        if re.search(r"--es\s+(?:lucent\.)?(?:system|system_id)\s+", command) is None:
-            reasons.append("has no in-window system id")
+        else:
+            reasons.append("is neither the internal in-window route nor a "
+                           "recognized external route")
+        if reasons:
+            kind = ("stale-am-start" if am_start else (
+                "stale-am-broadcast" if am_broadcast else "external-or-invalid"))
         rows.append({
             "commandSha256": sha256_bytes(command.encode("utf-8")),
-            "kind": "intercepted-same-activity-start" if not reasons else (
-                "stale-am-start" if am_start else (
-                    "stale-am-broadcast" if am_broadcast else "external-or-invalid"
-                )
-            ),
+            "kind": kind,
             "pass": not reasons,
             "reason": "; ".join(reasons),
         })
