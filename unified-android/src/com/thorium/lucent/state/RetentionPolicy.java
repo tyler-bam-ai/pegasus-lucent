@@ -25,6 +25,15 @@ public final class RetentionPolicy {
     }
 
     public Set<String> selectForDeletion(List<Candidate> supplied, String protectedSnapshotId) {
+        Set<String> protectedIds = protectedSnapshotId == null
+                ? Collections.<String>emptySet()
+                : Collections.singleton(protectedSnapshotId);
+        return selectForDeletion(supplied, protectedIds);
+    }
+
+    /** As above, but every supplied id is mandatory-protected from deletion. */
+    public Set<String> selectForDeletion(List<Candidate> supplied,
+            Set<String> protectedSnapshotIds) {
         List<Candidate> candidates = new ArrayList<>(supplied);
         Collections.sort(candidates, new Comparator<Candidate>() {
             @Override public int compare(Candidate a, Candidate b) {
@@ -34,7 +43,8 @@ public final class RetentionPolicy {
         });
 
         LinkedHashSet<String> keep = new LinkedHashSet<>();
-        if (protectedSnapshotId != null) keep.add(protectedSnapshotId);
+        if (protectedSnapshotIds != null) for (String id : protectedSnapshotIds)
+            if (id != null) keep.add(id);
         LinkedHashSet<String> mandatory = new LinkedHashSet<>(keep);
         int newestHistory = 0;
         for (Candidate candidate : candidates) {

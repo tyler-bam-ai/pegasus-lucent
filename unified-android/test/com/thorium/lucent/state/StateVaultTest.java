@@ -25,6 +25,9 @@ public final class StateVaultTest {
         vaultPrunesWithoutDeletingQuickResume();
         unreadableQuickReferenceProtectsSnapshotsFromPrune();
         sharedVaultReturnsOneInstancePerRoot();
+        separateInstancesOverOneRootShareOneMonitor();
+        publishVerificationRejectsChecksumMismatch();
+        previousQuickResumeSurvivesForOneGeneration();
         quickResumeDoesNotDisplaceAutomaticHistory();
         identitiesUseSeparateStorage();
         exactCoreArtifactIdentityIsolatesState();
@@ -210,8 +213,139 @@ public final class StateVaultTest {
             // and leave every snapshot on disk rather than delete the state
             // the reference pointed at.
             TestSupport.truth(quick.directory.isDirectory(),
-                    "unreadable reference protects the live Quick Resume from prune");
+                    "corrupt reference protects the live Quick Resume from prune");
+            TestSupport.equal(7, vault.list(identity).size(),
+                    "fail-closed prune leaves every snapshot on disk");
         } finally { TestSupport.deleteTree(root); }
+
+        File unreadableRoot = TestSupport.temporaryDirectory("state-prune-unreadable-ref");
+        try {
+            MutableClock clock = new MutableClock(0L);
+            StateVault vault = new StateVault(unreadableRoot, clock,
+                    new RetentionPolicy(2, 3, 1_000_000L));
+            StateIdentity identity = identity("engine-1");
+            StateSnapshot quick = vault.saveQuickResume(identity, new byte[] { 9 }, null, 0L);
+            File game = quick.directory.getParentFile().getParentFile();
+            File reference = new File(game, "quick-resume.ref");
+            TestSupport.truth(reference.delete() && reference.mkdir(),
+                    "replace the reference with an unreadable entry");
+            for (int i = 1; i <= 6; i++) {
+                clock.now = i * 60L * 60L * 1000L;
+                vault.saveAutomatic(identity, new byte[] { (byte) i }, null, i * 100L);
+            }
+            TestSupport.truth(quick.directory.isDirectory(),
+                    "unreadable reference protects the live Quick Resume from prune");
+            TestSupport.equal(7, vault.list(identity).size(),
+                    "unreadable reference fails prune closed for every snapshot");
+        } finally { TestSupport.deleteTree(unreadableRoot); }
+    }
+
+    private static void separateInstancesOverOneRootShareOneMonitor() throws Exception {
+        File root = TestSupport.temporaryDirectory("state-root-monitor");
+        try {
+            // Sessions construct separate StateVault instances over one root
+            // during a game switch; mutual exclusion is therefore keyed on
+            // the canonical root path, not on the instance.
+            StateVault first = new StateVault(root);
+            StateVault second = new StateVault(new File(root, "."));
+            TestSupport.truth(first.rootMonitor() == second.rootMonitor(),
+                    "instances over one canonical root share one lock monitor");
+            TestSupport.truth(first.rootMonitor() !=
+                            new StateVault(new File(root, "other")).rootMonitor(),
+                    "different roots keep separate lock monitors");
+
+            // Functional interleaving: a retiring instance's saves and a new
+            // instance's save/prune passes over one game directory must leave
+            // a loadable Quick Resume behind.
+            StateIdentity identity = identity("engine-1");
+            first.saveQuickResume(identity, new byte[] { 1 }, null, 1L);
+            second.saveAutomatic(identity, new byte[] { 2 }, null, 2L);
+            first.saveAutomatic(identity, new byte[] { 3 }, null, 3L);
+            second.saveQuickResume(identity, new byte[] { 4 }, null, 4L);
+            StateLoadResult loaded = first.loadQuickResume(identity);
+            TestSupport.equal(StateLoadResult.Status.OK, loaded.status,
+                    "interleaved two-instance save and prune keep Quick Resume loadable");
+            TestSupport.equal(4, (int) loaded.state[0],
+                    "the newest Quick Resume wins across instances");
+        } finally { TestSupport.deleteTree(root); }
+    }
+
+    private static void publishVerificationRejectsChecksumMismatch() throws Exception {
+        File root = TestSupport.temporaryDirectory("state-publish-verify");
+        try {
+            StateVault vault = new StateVault(root);
+            StateIdentity identity = identity("engine-1");
+            StateSnapshot good = vault.saveQuickResume(identity, new byte[] { 1, 2, 3 }, null, 1L);
+            TestSupport.truth(good.directory.isDirectory(),
+                    "a verifiable snapshot publishes normally");
+
+            // Simulate a snapshot whose durable payload does not match its
+            // manifest digests: same manifest, same payload length, different
+            // bytes. The publish-verify path must reject it, which is what
+            // keeps saveQuickResume from ever swapping quick-resume.ref to an
+            // unloadable snapshot.
+            File fake = new File(root, "corrupt-published");
+            TestSupport.truth(fake.mkdir(), "crafted snapshot directory is created");
+            byte[] manifest = readFully(new File(good.directory, "manifest.properties"));
+            FileOutputStream copied = new FileOutputStream(new File(fake, "manifest.properties"));
+            copied.write(manifest);
+            copied.close();
+            FileOutputStream corrupt = new FileOutputStream(new File(fake, "state.bin.gz"));
+            java.util.zip.GZIPOutputStream gzip = new java.util.zip.GZIPOutputStream(corrupt);
+            gzip.write(new byte[] { 9, 9, 9 });
+            gzip.close();
+            boolean rejected = false;
+            try { StateVault.verifyPublishedState(fake); }
+            catch (java.io.IOException expected) { rejected = true; }
+            TestSupport.truth(rejected,
+                    "publish verification rejects a state whose checksum mismatches");
+
+            StateLoadResult loaded = vault.loadQuickResume(identity);
+            TestSupport.equal(StateLoadResult.Status.OK, loaded.status,
+                    "the reference still targets the verified snapshot");
+            TestSupport.equal(1, (int) loaded.state[0],
+                    "rejected snapshot never replaced the loadable Quick Resume");
+        } finally { TestSupport.deleteTree(root); }
+    }
+
+    private static void previousQuickResumeSurvivesForOneGeneration() throws Exception {
+        File root = TestSupport.temporaryDirectory("state-previous-generation");
+        try {
+            MutableClock clock = new MutableClock(1_000L);
+            StateVault vault = new StateVault(root, clock, new RetentionPolicy(2, 3, 1_000_000L));
+            StateIdentity identity = identity("engine-1");
+            StateSnapshot first = vault.saveQuickResume(identity, new byte[] { 1 }, null, 1L);
+            clock.now = 2_000L;
+            StateSnapshot second = vault.saveQuickResume(identity, new byte[] { 2 }, null, 2L);
+            // The prune following the second publish protected the previous
+            // generation: if the new state proves unreadable later, the prior
+            // Quick Resume still exists on disk.
+            TestSupport.truth(first.directory.isDirectory(),
+                    "previous Quick Resume survives the prune after its replacement");
+            TestSupport.truth(second.directory.isDirectory(), "new Quick Resume is published");
+            clock.now = 3_000L;
+            StateSnapshot third = vault.saveQuickResume(identity, new byte[] { 3 }, null, 3L);
+            TestSupport.truth(!first.directory.exists(),
+                    "protection lasts exactly one generation");
+            TestSupport.truth(second.directory.isDirectory() && third.directory.isDirectory(),
+                    "current and previous generations remain");
+            StateLoadResult loaded = vault.loadQuickResume(identity);
+            TestSupport.equal(StateLoadResult.Status.OK, loaded.status,
+                    "newest Quick Resume loads after generational pruning");
+            TestSupport.equal(3, (int) loaded.state[0], "newest generation is the live one");
+        } finally { TestSupport.deleteTree(root); }
+    }
+
+    private static byte[] readFully(File file) throws Exception {
+        java.io.FileInputStream input = new java.io.FileInputStream(file);
+        try {
+            java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
+            byte[] buffer = new byte[4096];
+            int count;
+            while ((count = input.read(buffer)) >= 0)
+                if (count > 0) output.write(buffer, 0, count);
+            return output.toByteArray();
+        } finally { input.close(); }
     }
 
     private static void sharedVaultReturnsOneInstancePerRoot() throws Exception {
@@ -307,7 +441,8 @@ public final class StateVaultTest {
                 if (snapshot.metadata.kind == SnapshotKind.QUICK_RESUME) quick++;
             }
             TestSupport.equal(3, automatic, "Quick Resume cannot displace automatic history");
-            TestSupport.equal(1, quick, "only the referenced Quick Resume is retained");
+            TestSupport.equal(2, quick,
+                    "the referenced Quick Resume plus one prior generation are retained");
         } finally { TestSupport.deleteTree(root); }
     }
 

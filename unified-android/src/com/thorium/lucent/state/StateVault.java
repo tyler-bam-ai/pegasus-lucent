@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -34,6 +35,14 @@ public final class StateVault {
     private final File root;
     private final Clock clock;
     private final RetentionPolicy retention;
+    /**
+     * Mutual exclusion is keyed on the canonical vault root, not the instance.
+     * Multiple sessions construct separate StateVault instances over one root
+     * (a retiring game plus its relaunch), and a per-instance lock would let
+     * the retiring session's save interleave with the new session's prune
+     * over the same game directory.
+     */
+    private final Object monitor;
 
     public StateVault(File root) {
         this(root, Clock.SYSTEM, RetentionPolicy.DEFAULT);
@@ -45,18 +54,19 @@ public final class StateVault {
         this.root = root;
         this.clock = clock;
         this.retention = retention;
+        this.monitor = monitorFor(root);
     }
 
     /**
-     * Vault operations synchronize on the instance, so two sessions holding
-     * separate instances over one root (a retiring game plus its relaunch)
-     * could interleave save and prune. Production callers share one instance
-     * per root through this factory; direct construction remains for tests.
+     * Production callers share one instance per root through this factory;
+     * direct construction remains for tests. Even directly constructed
+     * instances over one root serialize their operations through the shared
+     * root monitor.
      */
     public static StateVault shared(File root) {
         if (root == null)
             throw new IllegalArgumentException("StateVault dependencies cannot be null");
-        String key = root.getAbsolutePath();
+        String key = canonicalKey(root);
         StateVault current = SHARED.get(key);
         if (current != null) return current;
         StateVault created = new StateVault(root);
@@ -67,96 +77,140 @@ public final class StateVault {
     private static final java.util.concurrent.ConcurrentHashMap<String, StateVault> SHARED =
             new java.util.concurrent.ConcurrentHashMap<String, StateVault>();
 
-    public synchronized StateSnapshot saveQuickResume(StateIdentity identity, byte[] state,
+    private static final java.util.concurrent.ConcurrentHashMap<String, Object> MONITORS =
+            new java.util.concurrent.ConcurrentHashMap<String, Object>();
+
+    private static String canonicalKey(File root) {
+        try { return root.getCanonicalPath(); }
+        catch (IOException unresolvable) { return root.getAbsolutePath(); }
+    }
+
+    private static Object monitorFor(File root) {
+        String key = canonicalKey(root);
+        Object current = MONITORS.get(key);
+        if (current != null) return current;
+        Object created = new Object();
+        Object existing = MONITORS.putIfAbsent(key, created);
+        return existing != null ? existing : created;
+    }
+
+    /** Visible for tests: instances over one canonical root share this lock. */
+    Object rootMonitor() {
+        return monitor;
+    }
+
+    public StateSnapshot saveQuickResume(StateIdentity identity, byte[] state,
             byte[] webpScreenshot, long activePlayMillis) throws IOException {
-        StateSnapshot snapshot = save(identity, SnapshotKind.QUICK_RESUME, state,
-                webpScreenshot, activePlayMillis);
-        File game = gameDirectory(identity);
-        final byte[] reference = (snapshot.metadata.snapshotId + "\n")
-                .getBytes(StandardCharsets.UTF_8);
-        File temporary = new File(game, QUICK_REF + ".pending-" + UUID.randomUUID());
-        AtomicFiles.writeSynced(temporary, new AtomicFiles.OutputWriter() {
-            @Override public void write(OutputStream output) throws IOException {
-                output.write(reference);
+        synchronized (monitor) {
+            StateSnapshot snapshot = save(identity, SnapshotKind.QUICK_RESUME, state,
+                    webpScreenshot, activePlayMillis);
+            File game = gameDirectory(identity);
+            // The outgoing Quick Resume stays protected for one more prune
+            // generation; deleting it in the same pass that publishes its
+            // replacement would leave zero fallbacks if the new state proves
+            // unreadable in ways the publish verification cannot see.
+            String previousQuickId = readQuickId(game);
+            final byte[] reference = (snapshot.metadata.snapshotId + "\n")
+                    .getBytes(StandardCharsets.UTF_8);
+            File temporary = new File(game, QUICK_REF + ".pending-" + UUID.randomUUID());
+            AtomicFiles.writeSynced(temporary, new AtomicFiles.OutputWriter() {
+                @Override public void write(OutputStream output) throws IOException {
+                    output.write(reference);
+                }
+            });
+            AtomicFiles.replace(temporary, new File(game, QUICK_REF));
+            prune(identity, previousQuickId);
+            return snapshot;
+        }
+    }
+
+    public StateSnapshot saveAutomatic(StateIdentity identity, byte[] state,
+            byte[] webpScreenshot, long activePlayMillis) throws IOException {
+        synchronized (monitor) {
+            StateSnapshot result = save(identity, SnapshotKind.AUTOMATIC, state,
+                    webpScreenshot, activePlayMillis);
+            prune(identity, null);
+            return result;
+        }
+    }
+
+    public StateSnapshot saveRecovery(StateIdentity identity, byte[] state,
+            byte[] webpScreenshot, long activePlayMillis) throws IOException {
+        synchronized (monitor) {
+            StateSnapshot result = save(identity, SnapshotKind.RECOVERY, state,
+                    webpScreenshot, activePlayMillis);
+            prune(identity, null);
+            return result;
+        }
+    }
+
+    public StateSnapshot saveBeforeEngineUpdate(StateIdentity identity, byte[] state,
+            byte[] webpScreenshot, long activePlayMillis) throws IOException {
+        synchronized (monitor) {
+            StateSnapshot result = save(identity, SnapshotKind.PRE_UPDATE, state,
+                    webpScreenshot, activePlayMillis);
+            prune(identity, null);
+            return result;
+        }
+    }
+
+    public StateLoadResult loadQuickResume(StateIdentity expected) {
+        synchronized (monitor) {
+            File game = gameDirectory(expected);
+            File reference = new File(game, QUICK_REF);
+            try { AtomicFiles.recoverPrevious(reference); }
+            catch (IOException failure) {
+                return StateLoadResult.failure(StateLoadResult.Status.IO_ERROR, null,
+                        failure.getMessage());
             }
-        });
-        AtomicFiles.replace(temporary, new File(game, QUICK_REF));
-        prune(identity);
-        return snapshot;
-    }
-
-    public synchronized StateSnapshot saveAutomatic(StateIdentity identity, byte[] state,
-            byte[] webpScreenshot, long activePlayMillis) throws IOException {
-        StateSnapshot result = save(identity, SnapshotKind.AUTOMATIC, state,
-                webpScreenshot, activePlayMillis);
-        prune(identity);
-        return result;
-    }
-
-    public synchronized StateSnapshot saveRecovery(StateIdentity identity, byte[] state,
-            byte[] webpScreenshot, long activePlayMillis) throws IOException {
-        StateSnapshot result = save(identity, SnapshotKind.RECOVERY, state,
-                webpScreenshot, activePlayMillis);
-        prune(identity);
-        return result;
-    }
-
-    public synchronized StateSnapshot saveBeforeEngineUpdate(StateIdentity identity, byte[] state,
-            byte[] webpScreenshot, long activePlayMillis) throws IOException {
-        StateSnapshot result = save(identity, SnapshotKind.PRE_UPDATE, state,
-                webpScreenshot, activePlayMillis);
-        prune(identity);
-        return result;
-    }
-
-    public synchronized StateLoadResult loadQuickResume(StateIdentity expected) {
-        File game = gameDirectory(expected);
-        File reference = new File(game, QUICK_REF);
-        try { AtomicFiles.recoverPrevious(reference); }
-        catch (IOException failure) {
-            return StateLoadResult.failure(StateLoadResult.Status.IO_ERROR, null,
-                    failure.getMessage());
-        }
-        if (!reference.isFile())
-            return StateLoadResult.failure(StateLoadResult.Status.NOT_FOUND, null, "No Quick Resume");
-        try {
-            String snapshotId = readUtf8(reference).trim();
-            if (!safeSnapshotId(snapshotId))
-                return StateLoadResult.failure(StateLoadResult.Status.CORRUPT, null,
-                        "Invalid Quick Resume reference");
-            return loadSnapshot(expected, new File(new File(game, SNAPSHOTS), snapshotId));
-        } catch (IOException failure) {
-            return StateLoadResult.failure(StateLoadResult.Status.IO_ERROR, null,
-                    failure.getMessage());
-        }
-    }
-
-    public synchronized StateLoadResult loadSnapshot(StateIdentity expected, StateSnapshot snapshot) {
-        return snapshot == null
-                ? StateLoadResult.failure(StateLoadResult.Status.NOT_FOUND, null, "Snapshot missing")
-                : loadSnapshot(expected, snapshot.directory);
-    }
-
-    public synchronized List<StateSnapshot> list(StateIdentity identity) {
-        List<StateSnapshot> result = new ArrayList<>();
-        File snapshots = new File(gameDirectory(identity), SNAPSHOTS);
-        File[] directories = snapshots.listFiles();
-        if (directories != null) for (File directory : directories) {
-            if (!directory.isDirectory() || directory.getName().startsWith(".pending-")) continue;
+            if (!reference.isFile())
+                return StateLoadResult.failure(StateLoadResult.Status.NOT_FOUND, null,
+                        "No Quick Resume");
             try {
-                SnapshotMetadata metadata = readMetadata(directory);
-                if (metadata.identity.matches(identity))
-                    result.add(new StateSnapshot(metadata, directory));
-            } catch (IOException ignored) {
-                // Corrupt entries are retained for recovery and omitted from the UI.
+                String snapshotId = readUtf8(reference).trim();
+                if (!safeSnapshotId(snapshotId))
+                    return StateLoadResult.failure(StateLoadResult.Status.CORRUPT, null,
+                            "Invalid Quick Resume reference");
+                return loadSnapshot(expected, new File(new File(game, SNAPSHOTS), snapshotId));
+            } catch (IOException failure) {
+                return StateLoadResult.failure(StateLoadResult.Status.IO_ERROR, null,
+                        failure.getMessage());
             }
         }
-        Collections.sort(result, new Comparator<StateSnapshot>() {
-            @Override public int compare(StateSnapshot a, StateSnapshot b) {
-                return Long.compare(b.metadata.createdAtMillis, a.metadata.createdAtMillis);
+    }
+
+    public StateLoadResult loadSnapshot(StateIdentity expected, StateSnapshot snapshot) {
+        synchronized (monitor) {
+            return snapshot == null
+                    ? StateLoadResult.failure(StateLoadResult.Status.NOT_FOUND, null,
+                            "Snapshot missing")
+                    : loadSnapshot(expected, snapshot.directory);
+        }
+    }
+
+    public List<StateSnapshot> list(StateIdentity identity) {
+        synchronized (monitor) {
+            List<StateSnapshot> result = new ArrayList<>();
+            File snapshots = new File(gameDirectory(identity), SNAPSHOTS);
+            File[] directories = snapshots.listFiles();
+            if (directories != null) for (File directory : directories) {
+                if (!directory.isDirectory() || directory.getName().startsWith(".pending-"))
+                    continue;
+                try {
+                    SnapshotMetadata metadata = readMetadata(directory);
+                    if (metadata.identity.matches(identity))
+                        result.add(new StateSnapshot(metadata, directory));
+                } catch (IOException ignored) {
+                    // Corrupt entries are retained for recovery and omitted from the UI.
+                }
             }
-        });
-        return result;
+            Collections.sort(result, new Comparator<StateSnapshot>() {
+                @Override public int compare(StateSnapshot a, StateSnapshot b) {
+                    return Long.compare(b.metadata.createdAtMillis, a.metadata.createdAtMillis);
+                }
+            });
+            return result;
+        }
     }
 
     private StateSnapshot save(final StateIdentity identity, final SnapshotKind kind,
@@ -206,10 +260,40 @@ public final class StateVault {
             if (!id.equals(verified.snapshotId)) throw new IOException("Manifest verification failed");
             AtomicFiles.publishDirectory(pending, published);
             complete = true;
-            return new StateSnapshot(metadata, published);
         } finally {
             if (!complete) AtomicFiles.deleteTree(pending);
         }
+        // End-to-end verification of the durable payload before the caller may
+        // reference this snapshot (Quick Resume swaps its ref only after this
+        // returns). The manifest digests cover the uncompressed state, so the
+        // published state.bin.gz is decompressed and re-hashed exactly as a
+        // future load would. A snapshot that cannot be loaded must never
+        // replace one that can.
+        try {
+            verifyPublishedState(published);
+        } catch (IOException corrupt) {
+            AtomicFiles.deleteTree(published);
+            AtomicFiles.syncDirectory(snapshots);
+            throw new IOException("Published snapshot failed verification and was discarded: "
+                    + corrupt.getMessage(), corrupt);
+        }
+        return new StateSnapshot(metadata, published);
+    }
+
+    /**
+     * Proves a published snapshot's state payload round-trips: decompresses
+     * state.bin.gz from disk and checks it against the manifest digests, the
+     * same validation {@link #loadSnapshot(StateIdentity, File)} applies.
+     */
+    static void verifyPublishedState(File directory) throws IOException {
+        SnapshotMetadata metadata = readMetadata(directory);
+        if (metadata.uncompressedBytes <= 0 || metadata.uncompressedBytes > MAX_UNCOMPRESSED_STATE)
+            throw new IOException("Invalid state size");
+        byte[] state = gunzip(new File(directory, STATE), metadata.uncompressedBytes);
+        if (state.length != metadata.uncompressedBytes ||
+                !metadata.stateSha256.equals(Digests.sha256(state)) ||
+                metadata.stateCrc32 != Digests.crc32(state))
+            throw new IOException("State checksum mismatch");
     }
 
     private StateLoadResult loadSnapshot(StateIdentity expected, File directory) {
@@ -238,25 +322,35 @@ public final class StateVault {
         }
     }
 
-    private void prune(StateIdentity identity) {
+    private void prune(StateIdentity identity, String previousQuickId) {
         List<StateSnapshot> snapshots = list(identity);
         File game = gameDirectory(identity);
         String protectedId = readQuickId(game);
-        if (new File(game, QUICK_REF).exists() &&
-                (protectedId == null || !safeSnapshotId(protectedId))) {
+        boolean referencePresent = new File(game, QUICK_REF).exists() ||
+                new File(game, QUICK_REF + ".previous").exists();
+        if (referencePresent && (protectedId == null || !safeSnapshotId(protectedId))) {
             // Fail closed: with no readable reference the retention policy
             // cannot tell which Quick Resume snapshot is live and would
             // select every one of them for deletion. An unreadable reference
             // must protect the newest state, never expose it. Retry on the
             // next save.
+            System.err.println("StateVault: PRUNE_SKIPPED_UNREADABLE_QUICK_REF "
+                    + "quick-resume.ref exists but is unreadable or invalid for "
+                    + game.getName() + "; skipping prune to protect the live Quick Resume");
             return;
         }
+        Set<String> protectedIds = new LinkedHashSet<>();
+        if (protectedId != null && safeSnapshotId(protectedId)) protectedIds.add(protectedId);
+        // The prune that follows a successful Quick Resume publish also keeps
+        // the immediately-preceding Quick Resume for one generation.
+        if (previousQuickId != null && safeSnapshotId(previousQuickId))
+            protectedIds.add(previousQuickId);
         List<RetentionPolicy.Candidate> candidates = new ArrayList<>();
         for (StateSnapshot snapshot : snapshots)
             candidates.add(new RetentionPolicy.Candidate(snapshot.metadata.snapshotId,
                     snapshot.metadata.createdAtMillis, AtomicFiles.size(snapshot.directory),
                     snapshot.metadata.kind != SnapshotKind.QUICK_RESUME));
-        Set<String> deletions = retention.selectForDeletion(candidates, protectedId);
+        Set<String> deletions = retention.selectForDeletion(candidates, protectedIds);
         for (StateSnapshot snapshot : snapshots)
             if (deletions.contains(snapshot.metadata.snapshotId))
                 AtomicFiles.deleteTree(snapshot.directory);
