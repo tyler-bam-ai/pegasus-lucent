@@ -1,5 +1,11 @@
 # Lucent Android emulator catalog
 
+The long-term plan for replacing visible standalone emulator launches with a
+Lucent-owned libretro/native runtime is documented in
+[`in-process-emulation-plan.md`](in-process-emulation-plan.md). The table below
+describes the current standalone fallback catalog, not completed in-process
+integration.
+
 Lucent uses standalone Android emulators and does not require RetroArch. The
 catalog is keyed by systems that actually contain games. A missing emulator is
 never removed automatically, even after the final game for its system is

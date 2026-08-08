@@ -1,12 +1,12 @@
 # Lucent
 
-Lucent is both a cinematic theme for Pegasus Frontend and a complete Android game-library application derived from Pegasus. It supports conventional single-screen Android devices and dual-screen hardware such as the AYN Thor.
+Lucent is a single Android game-library and emulation application, with a standalone visual theme available for existing Pegasus Frontend users. The Lucent app supports conventional single-screen Android devices and dual-screen hardware such as the AYN Thor. Pegasus is the credited upstream frontend base; it is not a second app in the Lucent package.
 
 ## Download
 
 The [latest release](https://github.com/wildonrio/pegasus-lucent/releases/latest) provides two downloads:
 
-- **Lucent App** — the recommended, complete APK. It contains Pegasus Frontend, the Lucent theme, importer and media services, direct-launch bridges, updater, and the optional Thor Stop-button service. No separate Pegasus, theme, controller, or companion installation is required.
+- **Lucent App** — the recommended, complete APK. It contains the Lucent frontend, importer and media services, updater, and in-process emulator runtime. No separate Pegasus, theme, controller, companion, or emulator app is required for qualified internal systems.
 - **Lucent Theme** — the standalone theme ZIP for people who already use Pegasus and only want Lucent's visual experience. Android-only automation and services are not available from a QML theme alone.
 
 Lucent checks this repository at startup and can also check manually from Settings. When an update is available it asks before downloading and opens Android's standard installer confirmation; Android does not permit a normal third-party app to silently replace itself.
@@ -26,21 +26,24 @@ Lucent checks this repository at startup and can also check manually from Settin
 
 1. Download and install `lucent-<version>.apk` from the latest release.
 2. Open Lucent and grant the storage permissions Android requests. The first library discovery runs automatically.
-3. On an AYN Thor, enable **Lucent Stop Button** in Android Accessibility settings if you want the one-second Stop-button shortcut.
-
-On the Thor, a normal press of the square Stop/Select button is passed through unchanged as Select. Holding it continuously for one second closes the active game and restores Pegasus.
+3. On an AYN Thor, the square Stop/Select button works as Select when tapped. Holding it continuously for one second saves and exits the active game back to Lucent.
 
 ## Source layout
 
 - `theme/` — Pegasus QML theme and artwork.
 - `android-companion/` — dependency-free Android companion, importer, preview service, media enrichment, and updater.
-- `android-launch-bridge/` — ROM intent bridge and the one-second hold-to-exit controller service.
-- `unified-android/` — reproducible build that combines Pegasus and every Lucent component into the release APK.
+- `android-launch-bridge/` — legacy compatibility source; it is not packaged in the unified app.
+- `unified-android/` — reproducible build that combines the credited upstream frontend runtime and every Lucent component into one release APK.
 - `release-manifest.json` — signed-artifact versions, stable release URLs, and SHA-256 checksums used by the updater.
+- `docs/in-process-emulation-plan.md` — durable three-phase specification for
+  Lucent's own libretro/native game runtime, unified controls, and automatic
+  save history. Its implementation snapshot distinguishes finished host code
+  from cores that still require legal, state, performance, and device
+  qualification before release routing changes.
 
 ## Privacy and safety
 
-Lucent does not bundle games, firmware, keys, or emulator binaries. It does not download ROMs. Library discovery and metadata generation happen on the device. Source files are deleted from Downloads only after a game import is verified.
+Lucent does not bundle games, firmware, or keys, and it does not download ROMs. Qualified open-source emulator engines are built into the Lucent APK with their licenses and source references. Library discovery and metadata generation happen on the device. Source files are deleted from Downloads only after a game import is verified.
 
 ## Licensing
 
