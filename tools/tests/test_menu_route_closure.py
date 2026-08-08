@@ -114,6 +114,18 @@ class MenuRouteClosureTest(unittest.TestCase):
         self.assertEqual(audit[0]["kind"], "stale-am-broadcast")
         self.assertFalse(audit[0]["pass"])
 
+    def test_external_view_routes_accept_any_scheme(self):
+        # Install pages (https/market) and emulator deep links (dolphinemu://)
+        # are all legitimate external VIEW routes.
+        for uri in ("https://github.com/x/releases",
+                    "market://details?id=com.PceEmu",
+                    "dolphinemu://game?path=/storage/emulated/0/g.rvz"):
+            command = "am start -a android.intent.action.VIEW -d " + uri
+            audit = MODULE.launcher_audit(command)
+            self.assertEqual(audit[0]["kind"], "external-route", uri)
+            self.assertTrue(audit[0]["pass"], uri)
+            self.assertEqual([], MODULE.invalid_launch_lines(command), uri)
+
     def test_external_component_route_is_now_accepted(self):
         # Per-system EXTERNAL routing: a direct am-start into a foreign
         # emulator component is a valid product route.

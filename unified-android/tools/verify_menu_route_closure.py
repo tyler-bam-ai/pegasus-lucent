@@ -144,12 +144,14 @@ def launcher_audit(value: str) -> list[dict[str, object]]:
         cross_user = bool(re.search(r"(?:^|\s)--user(?:\s|=)", command))
         # A per-system EXTERNAL route is now a legitimate product feature. It is
         # a plain `am start` that either opens the emulator's install page
-        # (-a VIEW -d https://...), launches the emulator component directly, or
-        # hands a content URI through Lucent's own RomLaunchActivity trampoline.
-        # It deliberately does NOT target MainActivity or the internal action.
+        # (-a VIEW -d https://... or market://...), launches the emulator via its
+        # own deep-link scheme (e.g. -d dolphinemu://...), or hands a content URI
+        # through Lucent's own RomLaunchActivity trampoline. Any VIEW intent with
+        # a scheme'd data URI is a legitimate external open/launch/install route;
+        # it deliberately does NOT target MainActivity or the internal action.
         external_view_install = bool(
             re.search(r"-a\s+android\.intent\.action\.VIEW", command) and
-            re.search(r"-d\s+https?://", command))
+            re.search(r"-d\s+[A-Za-z][A-Za-z0-9+.-]*://", command))
         # An external component target must NOT be Lucent's own MainActivity: a
         # bare am-start onto the singleTask MainActivity without the internal
         # action is the historical stale route, not an external launch. The
